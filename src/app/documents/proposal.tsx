@@ -11,7 +11,7 @@ import { space } from '../../theme/tokens';
 /** Correction d'une intervention extraite (reste en BROUILLON). */
 export default function EditProposal() {
   const { batch, ex, pid } = useLocalSearchParams<{ batch: string; ex: string; pid: string }>();
-  const q =useQuery({ queryKey: ['batch', batch], queryFn: () => get<ImportBatch>(`/api/documents/batches/${batch}`) });
+  const q = useQuery({ queryKey: ['batch', batch], queryFn: () => get<ImportBatch>(`/api/documents/batches/${batch}`) });
   const p = q.data?.extraction?.proposals.find((x) => x._id === pid);
   if (!p) return <Loading />;
   return <ProposalForm key={p._id} p={p} batch={batch} ex={ex} />;
@@ -33,6 +33,7 @@ function ProposalForm({ p, batch, ex }: { p: Proposal; batch: string; ex: string
   const [contactChoice, setContactChoice] = useState<string | 'new' | null>(p.responsible.contactId);
 
   const save = useMutation({
+    meta: { success: 'Correction enregistrée' },
     mutationFn: () =>
       patch(`/api/extractions/${ex}/proposals/${pid}`, {
         date: form.date || null,
@@ -61,7 +62,7 @@ function ProposalForm({ p, batch, ex }: { p: Proposal; batch: string; ex: string
     onError: (e) => Alert.alert('Correction refusée', errorMessage(e)),
   });
 
-  const set =(k: keyof typeof form) => (v: string) => setForm({ ...form, [k]: v });
+  const set = (k: keyof typeof form) => (v: string) => setForm({ ...form, [k]: v });
 
   return (
     <Screen footer={<Button title="Enregistrer la correction" onPress={() => save.mutate()} loading={save.isPending} />}>
@@ -72,19 +73,31 @@ function ProposalForm({ p, batch, ex }: { p: Proposal; batch: string; ex: string
 
       <Section title="Frère responsable">
         <Field label="Nom" value={form.name} onChangeText={set('name')} />
-        <Field label="Téléphone" value={form.phone} onChangeText={set('phone')} keyboardType="phone-pad" placeholder="6XX XX XX XX" hint="Format camerounais ou international." />
+        <Field
+          label="Téléphone"
+          value={form.phone}
+          onChangeText={set('phone')}
+          keyboardType="phone-pad"
+          placeholder="6XX XX XX XX"
+          hint="Format camerounais ou international."
+        />
         {p.responsible.candidates.length ? (
           <Card>
-            <Small>Contacts proches dans le registre : choisissez la bonne personne ou confirmez un nouveau contact.</Small>
+            <Small>Contacts proches :</Small>
             <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
               {p.responsible.candidates.map((c) => (
-                <Chip key={c.contactId} label={`${c.fullName} (${Math.round(c.score * 100)} %)`} active={contactChoice === c.contactId} onPress={() => setContactChoice(c.contactId)} />
+                <Chip
+                  key={c.contactId}
+                  label={`${c.fullName} (${Math.round(c.score * 100)} %)`}
+                  active={contactChoice === c.contactId}
+                  onPress={() => setContactChoice(c.contactId)}
+                />
               ))}
               <Chip label="Nouvelle personne" active={contactChoice === 'new'} onPress={() => setContactChoice('new')} />
             </View>
           </Card>
         ) : null}
-        {p.responsible.matchStatus === 'ambiguous' && !contactChoice ? <Banner tone="warning" title="Choix nécessaire">Les noms se ressemblent : aucune association automatique n’est faite.</Banner> : null}
+        {p.responsible.matchStatus === 'ambiguous' && !contactChoice ? <Banner tone="warning" title="Choisissez le bon contact" /> : null}
       </Section>
 
       <Section title="Tâches">
@@ -107,7 +120,18 @@ function ProposalForm({ p, batch, ex }: { p: Proposal; batch: string; ex: string
             variant="secondary"
             onPress={() => {
               if (!newTask.trim()) return;
-              setTasks([...tasks, { _id: `new-${Date.now()}`, label: newTask.trim(), category: '', description: '', catalogRef: '', catalogEntryId: null, catalogProposalId: null }]);
+              setTasks([
+                ...tasks,
+                {
+                  _id: `new-${Date.now()}`,
+                  label: newTask.trim(),
+                  category: '',
+                  description: '',
+                  catalogRef: '',
+                  catalogEntryId: null,
+                  catalogProposalId: null,
+                },
+              ]);
               setNewTask('');
             }}
           />

@@ -9,7 +9,23 @@ import type { MonthPreview, MonthlyReport } from '../../lib/types';
 import { MONTH_NAMES, fmtDate, fmtDateTime, fmtShort, plural } from '../../lib/format';
 import { useFold } from '../../lib/useFold';
 import { toast } from '../../components/toast';
-import { Badge, Banner, Button, Card, Collapsible, Divider, ErrorState, IconButton, Loading, Row, Screen, Section, Small, Stat, StatRow } from '../../components/ui';
+import {
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Collapsible,
+  Divider,
+  ErrorState,
+  IconButton,
+  Loading,
+  Row,
+  Screen,
+  Section,
+  Small,
+  Stat,
+  StatRow,
+} from '../../components/ui';
 import { colors, radius, space } from '../../theme/tokens';
 
 const SECTIONS = ['included', 'missing', 'answers'];
@@ -22,26 +38,30 @@ export default function Reports() {
   const qc = useQueryClient();
   const fold = useFold(SECTIONS, ['included']);
 
-  const preview = useQuery({ queryKey: ['report-preview', year, month], queryFn: () => get<MonthPreview>(`/api/reports/monthly/preview?year=${year}&month=${month}`) });
+  const preview = useQuery({
+    queryKey: ['report-preview', year, month],
+    queryFn: () => get<MonthPreview>(`/api/reports/monthly/preview?year=${year}&month=${month}`),
+  });
   const history = useQuery({ queryKey: ['reports'], queryFn: () => get<MonthlyReport[]>('/api/reports/monthly') });
 
   const generate = useMutation({
     mutationFn: (ack: boolean) => post<{ report: MonthlyReport }>('/api/reports/monthly/generate', { year, month, acknowledgeIncomplete: ack }),
     onSuccess: (r) => {
       qc.invalidateQueries({ queryKey: ['reports'] });
-      const p = new URLSearchParams({ id: r.report._id, file: r.report.fileName, rows: String(r.report.rowsWritten), notes: r.report.preservationNotes.join('\n') });
+      const p = new URLSearchParams({
+        id: r.report._id,
+        file: r.report.fileName,
+        rows: String(r.report.rowsWritten),
+        notes: r.report.preservationNotes.join('\n'),
+      });
       router.push(`/reports/success?${p}`);
     },
     onError: (e) => {
       if (e instanceof ApiError && e.code === 'INCOMPLETE_DATA') {
-        Alert.alert(
-          'Données incomplètes',
-          'Certaines interventions n’ont pas de compte rendu ou ont des réponses manquantes. Les informations absentes resteront « Non renseigné » dans le rapport (jamais transformées en réponses positives).',
-          [
-            { text: 'Annuler', style: 'cancel' },
-            { text: 'Générer avec avertissement', style: 'destructive', onPress: () => generate.mutate(true) },
-          ],
-        );
+        Alert.alert('Données incomplètes', 'Les informations absentes resteront « Non renseigné ».', [
+          { text: 'Annuler', style: 'cancel' },
+          { text: 'Générer avec avertissement', style: 'destructive', onPress: () => generate.mutate(true) },
+        ]);
       } else Alert.alert('Génération impossible', errorMessage(e));
     },
   });
@@ -63,7 +83,13 @@ export default function Reports() {
   const rate = p && p.totalEvents ? Math.round((p.included.length / p.totalEvents) * 100) : 0;
 
   return (
-    <Screen refreshing={preview.isRefetching} onRefresh={() => { preview.refetch(); history.refetch(); }}>
+    <Screen
+      refreshing={preview.isRefetching}
+      onRefresh={() => {
+        preview.refetch();
+        history.refetch();
+      }}
+    >
       <View style={styles.monthBar}>
         <IconButton icon="chevron-back" label="Mois précédent" onPress={() => shift(-1)} size={40} />
         <Text style={styles.month}>
@@ -79,9 +105,19 @@ export default function Reports() {
       ) : p ? (
         <>
           {!p.template ? (
-            <Banner tone="danger" title="Aucun modèle de rapport" action={<Button title="Importer le modèle" compact variant="secondary" onPress={() => router.push('/settings/report-template')} style={{ alignSelf: 'flex-start', marginTop: 6 }} />}>
-              Importez le fichier « Rapport de suivi » (.docx) qui sert de modèle.
-            </Banner>
+            <Banner
+              tone="danger"
+              title="Aucun modèle de rapport"
+              action={
+                <Button
+                  title="Importer le modèle"
+                  compact
+                  variant="secondary"
+                  onPress={() => router.push('/settings/report-template')}
+                  style={{ alignSelf: 'flex-start', marginTop: 6 }}
+                />
+              }
+            ></Banner>
           ) : null}
 
           <StatRow>
@@ -96,11 +132,17 @@ export default function Reports() {
               <Badge label={p.complete ? 'Complet' : 'Incomplet'} tone={p.complete ? 'success' : 'warning'} />
             </View>
             <Small>
-              {plural(p.included.length, 'compte rendu reçu', 'comptes rendus reçus')} après travaux · {plural(p.questionnairesCompleted, 'questionnaire complet', 'questionnaires complets')} · {p.preCallsWithoutResponse} appel(s) préalable(s) sans retour
+              {plural(p.included.length, 'compte rendu reçu', 'comptes rendus reçus')} après travaux ·{' '}
+              {plural(p.questionnairesCompleted, 'questionnaire complet', 'questionnaires complets')} · {p.preCallsWithoutResponse} appel(s) préalable(s) sans
+              retour
             </Small>
           </Card>
 
-          {p.inconsistencies.length ? <Banner tone="warning" title="Incohérences détectées">{p.inconsistencies.join('\n')}</Banner> : null}
+          {p.inconsistencies.length ? (
+            <Banner tone="warning" title="Incohérences détectées">
+              {p.inconsistencies.join('\n')}
+            </Banner>
+          ) : null}
 
           <Collapsible
             title="Rubriques du rapport"
@@ -110,7 +152,7 @@ export default function Reports() {
             onToggle={() => fold.toggle('included')}
           >
             {p.included.length === 0 ? (
-              <Small style={{ padding: space.sm }}>Seules les interventions dont le compte rendu après travaux a été validé figurent dans le rapport.</Small>
+              <Small style={{ padding: space.sm }}>Comptes rendus validés uniquement</Small>
             ) : (
               // Même ordre que le fichier Word : une salle avec toutes ses dates et assemblées, puis la suivante
               p.venues.map((venue) => (
@@ -119,7 +161,13 @@ export default function Reports() {
                   {p.included
                     .filter((i) => i.venueName === venue)
                     .map((i) => (
-                      <Row key={i.eventId} icon="checkmark-circle-outline" title={`${fmtShort(i.date)} · ${i.congregationName}`} subtitle={i.tasks.join(', ')} onPress={() => router.push(`/events/${i.eventId}`)} />
+                      <Row
+                        key={i.eventId}
+                        icon="checkmark-circle-outline"
+                        title={`${fmtShort(i.date)} · ${i.congregationName}`}
+                        subtitle={i.tasks.join(', ')}
+                        onPress={() => router.push(`/events/${i.eventId}`)}
+                      />
                     ))}
                 </View>
               ))
@@ -127,15 +175,34 @@ export default function Reports() {
           </Collapsible>
 
           {p.withoutReport.length ? (
-            <Collapsible title="Bilans non reçus" subtitle={plural(p.withoutReport.length, 'intervention')} tone="warning" open={fold.isOpen('missing')} onToggle={() => fold.toggle('missing')}>
+            <Collapsible
+              title="Bilans non reçus"
+              subtitle={plural(p.withoutReport.length, 'intervention')}
+              tone="warning"
+              open={fold.isOpen('missing')}
+              onToggle={() => fold.toggle('missing')}
+            >
               {p.withoutReport.map((i) => (
-                <Row key={i.eventId} icon={i.past ? 'alert-circle-outline' : 'time-outline'} danger={i.past} title={`${i.venueName} · ${i.congregationName}`} subtitle={`${fmtDate(i.date)}${i.past ? '' : ' (à venir)'}`} onPress={() => router.push(`/events/${i.eventId}`)} />
+                <Row
+                  key={i.eventId}
+                  icon={i.past ? 'alert-circle-outline' : 'time-outline'}
+                  danger={i.past}
+                  title={`${i.venueName} · ${i.congregationName}`}
+                  subtitle={`${fmtDate(i.date)}${i.past ? '' : ' (à venir)'}`}
+                  onPress={() => router.push(`/events/${i.eventId}`)}
+                />
               ))}
             </Collapsible>
           ) : null}
 
           {p.missingAnswers.length ? (
-            <Collapsible title="Réponses à compléter" subtitle={`${plural(p.missingAnswers.length, 'réponse')} manquante(s) ou à vérifier`} tone="danger" open={fold.isOpen('answers')} onToggle={() => fold.toggle('answers')}>
+            <Collapsible
+              title="Réponses à compléter"
+              subtitle={`${plural(p.missingAnswers.length, 'réponse')} manquante(s) ou à vérifier`}
+              tone="danger"
+              open={fold.isOpen('answers')}
+              onToggle={() => fold.toggle('answers')}
+            >
               {p.missingAnswers.slice(0, 40).map((a, i) => (
                 <View key={i} style={styles.answer}>
                   <Small style={{ color: colors.text, fontWeight: '600' }}>
@@ -148,7 +215,13 @@ export default function Reports() {
             </Collapsible>
           ) : null}
 
-          <Button title="Générer le rapport Word" icon="document-attach-outline" onPress={() => generate.mutate(false)} loading={generate.isPending} disabled={!p.template || p.included.length === 0} />
+          <Button
+            title="Générer le rapport Word"
+            icon="document-attach-outline"
+            onPress={() => generate.mutate(false)}
+            loading={generate.isPending}
+            disabled={!p.template || p.included.length === 0}
+          />
         </>
       ) : null}
 
@@ -180,9 +253,24 @@ export default function Reports() {
 }
 
 const styles = StyleSheet.create({
-  monthBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', backgroundColor: colors.surface, borderRadius: radius.pill, padding: 6 },
+  monthBar: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: colors.surface,
+    borderRadius: radius.pill,
+    padding: 6,
+  },
   month: { fontSize: 17, fontWeight: '700', color: colors.text, letterSpacing: -0.2 },
   cardTitle: { fontSize: 16, fontWeight: '700', color: colors.text },
-  venue: { fontSize: 12, fontWeight: '700', letterSpacing: 0.8, textTransform: 'uppercase', color: colors.gold, paddingHorizontal: space.sm, paddingTop: space.sm },
+  venue: {
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.8,
+    textTransform: 'uppercase',
+    color: colors.gold,
+    paddingHorizontal: space.sm,
+    paddingTop: space.sm,
+  },
   answer: { backgroundColor: colors.bg, borderRadius: radius.md, borderCurve: 'continuous', padding: space.md, gap: 4 },
 });

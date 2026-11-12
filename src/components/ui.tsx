@@ -1,5 +1,6 @@
-import { useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -11,8 +12,10 @@ import {
   type StyleProp,
   type ViewStyle,
   type TextStyle,
+  Platform,
 } from 'react-native';
 import Animated, { FadeIn, FadeOut, LinearTransition, useReducedMotion } from 'react-native-reanimated';
+import { KeyboardAwareScrollView, KeyboardStickyView } from 'react-native-keyboard-controller';
 import { Ionicons } from '@expo/vector-icons';
 import { colors, motion, radius, shadow, space, type as t, toneColors, type Tone } from '../theme/tokens';
 
@@ -35,15 +38,23 @@ export function Screen({
 }) {
   return (
     <View style={styles.flex}>
-      <ScrollView
+      {/* Le champ en cours de saisie reste toujours visible au-dessus du clavier (et du pied de page) */}
+      <KeyboardAwareScrollView
+        bottomOffset={footer ? 110 : 24}
         contentInsetAdjustmentBehavior="automatic"
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[padded && styles.screenPad, { gap: space.xl }]}
-        refreshControl={onRefresh ? <RefreshControl refreshing={Boolean(refreshing)} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined}
+        refreshControl={
+          onRefresh ? <RefreshControl refreshing={Boolean(refreshing)} onRefresh={onRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined
+        }
       >
         {children}
-      </ScrollView>
-      {footer ? <View style={styles.footer}>{footer}</View> : null}
+      </KeyboardAwareScrollView>
+      {footer ? (
+        <KeyboardStickyView>
+          <View style={styles.footer}>{footer}</View>
+        </KeyboardStickyView>
+      ) : null}
     </View>
   );
 }
@@ -56,13 +67,25 @@ export function Stack({ children, gap = 'md', style }: { children: ReactNode; ga
 /* ───────────────────────── Typographie ───────────────────────── */
 
 export function Display({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
-  return <Text style={[t.display, style]} accessibilityRole="header">{children}</Text>;
+  return (
+    <Text style={[t.display, style]} accessibilityRole="header">
+      {children}
+    </Text>
+  );
 }
 export function Title({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
-  return <Text style={[t.title, style]} accessibilityRole="header">{children}</Text>;
+  return (
+    <Text style={[t.title, style]} accessibilityRole="header">
+      {children}
+    </Text>
+  );
 }
 export function H2({ children, style }: { children: ReactNode; style?: StyleProp<TextStyle> }) {
-  return <Text style={[t.h2, style]} accessibilityRole="header">{children}</Text>;
+  return (
+    <Text style={[t.h2, style]} accessibilityRole="header">
+      {children}
+    </Text>
+  );
 }
 export function H3({ children, style, numberOfLines }: { children: ReactNode; style?: StyleProp<TextStyle>; numberOfLines?: number }) {
   return (
@@ -71,7 +94,17 @@ export function H3({ children, style, numberOfLines }: { children: ReactNode; st
     </Text>
   );
 }
-export function Body({ children, style, numberOfLines, selectable }: { children: ReactNode; style?: StyleProp<TextStyle>; numberOfLines?: number; selectable?: boolean }) {
+export function Body({
+  children,
+  style,
+  numberOfLines,
+  selectable,
+}: {
+  children: ReactNode;
+  style?: StyleProp<TextStyle>;
+  numberOfLines?: number;
+  selectable?: boolean;
+}) {
   return (
     <Text style={[t.body, style]} numberOfLines={numberOfLines} selectable={selectable}>
       {children}
@@ -92,7 +125,17 @@ export function Label({ children, style }: { children: ReactNode; style?: StyleP
 /* ───────────────────────── Surfaces ───────────────────────── */
 
 /** Carte : surface chaude ; pression = léger assombrissement (une rangée ne « rebondit » pas). */
-export function Card({ children, style, onPress, accessibilityLabel }: { children: ReactNode; style?: StyleProp<ViewStyle>; onPress?: () => void; accessibilityLabel?: string }) {
+export function Card({
+  children,
+  style,
+  onPress,
+  accessibilityLabel,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  onPress?: () => void;
+  accessibilityLabel?: string;
+}) {
   if (onPress) {
     return (
       <Pressable
@@ -108,8 +151,21 @@ export function Card({ children, style, onPress, accessibilityLabel }: { childre
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-/** Carte sombre « héros » (prochaine intervention, synthèse) — une seule par écran. */
-export function HeroCard({ children, onPress, style }: { children: ReactNode; onPress?: () => void; style?: StyleProp<ViewStyle> }) {
+/**
+ * Carte sombre « héros » (prochaine intervention, synthèse) — une seule par écran.
+ * Avec `image` (photo de la salle) : la photo remplit la carte sous un voile sombre, le texte reste lisible.
+ */
+export function HeroCard({
+  children,
+  onPress,
+  style,
+  image,
+}: {
+  children: ReactNode;
+  onPress?: () => void;
+  style?: StyleProp<ViewStyle>;
+  image?: string | null;
+}) {
   return (
     <Pressable
       onPress={onPress}
@@ -117,8 +173,39 @@ export function HeroCard({ children, onPress, style }: { children: ReactNode; on
       accessibilityRole={onPress ? 'button' : undefined}
       style={({ pressed }) => [styles.hero, pressed && { backgroundColor: colors.primaryPressed }, style]}
     >
+      {image ? (
+        <>
+          <Image source={{ uri: image }} resizeMode="cover" style={StyleSheet.absoluteFill} accessibilityIgnoresInvertColors />
+          <View style={[StyleSheet.absoluteFill, styles.heroVeil]} />
+        </>
+      ) : null}
       {children}
     </Pressable>
+  );
+}
+
+/** Vignette de salle (comme une photo de profil) : la photo de la salle, sinon une icône. */
+export function VenueThumb({ image, size = 44, radiusSize }: { image?: string | null; size?: number; radiusSize?: number }) {
+  const r = radiusSize ?? Math.round(size * 0.28);
+  return (
+    <View
+      style={{
+        width: size,
+        height: size,
+        borderRadius: r,
+        borderCurve: 'continuous',
+        overflow: 'hidden',
+        backgroundColor: colors.primarySoft,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      {image ? (
+        <Image source={{ uri: image }} style={{ width: size, height: size }} resizeMode="cover" accessibilityIgnoresInvertColors />
+      ) : (
+        <Ionicons name="business" size={Math.round(size * 0.45)} color={colors.primary} />
+      )}
+    </View>
   );
 }
 
@@ -135,6 +222,37 @@ export function Section({ title, action, children }: { title: string; action?: R
 }
 
 /* ───────────────────────── Actions ───────────────────────── */
+
+/**
+ * Action d'un bouton : si elle renvoie une promesse, le bouton passe en chargement
+ * et n'accepte plus aucun appui jusqu'à la fin (pas de double envoi).
+ */
+function usePressAction(onPress: (() => unknown) | undefined, blocked: boolean) {
+  const [busy, setBusy] = useState(false);
+  const running = useRef(false);
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  const run = () => {
+    if (!onPress || blocked || running.current) return;
+    const result = onPress();
+    if (result && typeof (result as Promise<unknown>).then === 'function') {
+      running.current = true;
+      setBusy(true);
+      (result as Promise<unknown>)
+        .catch(() => undefined)
+        .finally(() => {
+          running.current = false;
+          if (mounted.current) setBusy(false);
+        });
+    }
+  };
+  return { busy, run };
+}
 
 type Variant = 'primary' | 'secondary' | 'ghost' | 'danger' | 'whatsapp' | 'light';
 const VARIANTS: Record<Variant, { bg: string; fg: string; border: string }> = {
@@ -158,7 +276,7 @@ export function Button({
   style,
 }: {
   title: string;
-  onPress?: () => void;
+  onPress?: () => unknown;
   variant?: Variant;
   icon?: IconName;
   loading?: boolean;
@@ -167,17 +285,19 @@ export function Button({
   style?: StyleProp<ViewStyle>;
 }) {
   const v = VARIANTS[variant];
-  const off = Boolean(disabled || loading);
+  const action = usePressAction(onPress, Boolean(disabled || loading));
+  const isLoading = Boolean(loading || action.busy);
+  const off = Boolean(disabled || isLoading);
   const [pressed, setPressed] = useState(false);
   const reduced = useReducedMotion();
   return (
     <Pressable
-      onPress={off ? undefined : onPress}
+      onPress={off ? undefined : action.run}
       onPressIn={() => setPressed(true)}
       onPressOut={() => setPressed(false)}
       accessibilityRole="button"
       accessibilityLabel={title}
-      accessibilityState={{ disabled: off, busy: Boolean(loading) }}
+      accessibilityState={{ disabled: off, busy: isLoading }}
       style={[compact ? undefined : styles.btnFull, style]}
     >
       <Animated.View
@@ -193,7 +313,7 @@ export function Button({
           },
         ]}
       >
-        {loading ? <Spinner color={v.fg} /> : icon ? <Ionicons name={icon} size={compact ? 16 : 18} color={v.fg} /> : null}
+        {isLoading ? <Spinner color={v.fg} /> : icon ? <Ionicons name={icon} size={compact ? 16 : 18} color={v.fg} /> : null}
         <Text style={{ color: v.fg, fontSize: compact ? 14 : 15, fontWeight: '600', letterSpacing: 0.1 }}>{title}</Text>
       </Animated.View>
     </Pressable>
@@ -201,17 +321,45 @@ export function Button({
 }
 
 /** Bouton rond à icône (44 pt minimum) — libellé d'accessibilité obligatoire. */
-export function IconButton({ icon, label, onPress, tone = 'neutral', size = 44 }: { icon: IconName; label: string; onPress?: () => void; tone?: Tone | 'onDark'; size?: number }) {
+export function IconButton({
+  icon,
+  label,
+  onPress,
+  tone = 'neutral',
+  size = 44,
+  loading,
+}: {
+  icon: IconName;
+  label: string;
+  onPress?: () => unknown;
+  tone?: Tone | 'onDark';
+  size?: number;
+  loading?: boolean;
+}) {
+  const action = usePressAction(onPress, Boolean(loading));
+  const isLoading = Boolean(loading || action.busy);
   const c = tone === 'onDark' ? { bg: 'rgba(248,244,236,0.12)', fg: colors.onPrimary } : toneColors[tone];
   return (
     <Pressable
-      onPress={onPress}
+      onPress={isLoading ? undefined : action.run}
+      disabled={isLoading}
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ busy: isLoading, disabled: isLoading }}
       hitSlop={6}
-      style={({ pressed }) => [{ width: size, height: size, borderRadius: size / 2, alignItems: 'center', justifyContent: 'center', backgroundColor: c.bg, opacity: pressed ? 0.75 : 1 }]}
+      style={({ pressed }) => [
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: c.bg,
+          opacity: pressed ? 0.75 : 1,
+        },
+      ]}
     >
-      <Ionicons name={icon} size={Math.round(size * 0.45)} color={c.fg} />
+      {isLoading ? <Spinner color={c.fg} size={Math.round(size * 0.4)} /> : <Ionicons name={icon} size={Math.round(size * 0.45)} color={c.fg} />}
     </Pressable>
   );
 }
@@ -249,7 +397,19 @@ export function Badge({ label, tone = 'neutral', icon }: { label: string; tone?:
   );
 }
 
-export function Banner({ tone = 'warning', icon = 'alert-circle', title, children, action }: { tone?: Tone; icon?: IconName; title: string; children?: ReactNode; action?: ReactNode }) {
+export function Banner({
+  tone = 'warning',
+  icon = 'alert-circle',
+  title,
+  children,
+  action,
+}: {
+  tone?: Tone;
+  icon?: IconName;
+  title: string;
+  children?: ReactNode;
+  action?: ReactNode;
+}) {
   const c = toneColors[tone];
   return (
     <View style={[styles.banner, { backgroundColor: c.bg }]} accessibilityRole="alert">
@@ -265,14 +425,33 @@ export function Banner({ tone = 'warning', icon = 'alert-circle', title, childre
 
 /* ───────────────────────── Formulaires ───────────────────────── */
 
-export function Field({ label, error, hint, style, multiline, onFocus, onBlur, ...props }: TextInputProps & { label: string; error?: string; hint?: string }) {
+/**
+ * Champ de saisie. En multiligne, il commence sur UNE ligne et s’agrandit pendant l’écriture (le moins de place possible).
+ * Sans libellé (label=""), seul le texte indicatif est affiché.
+ */
+export function Field({
+  label,
+  error,
+  hint,
+  style,
+  multiline,
+  onFocus,
+  onBlur,
+  onContentSizeChange,
+  ...props
+}: TextInputProps & { label: string; error?: string; hint?: string }) {
   const [focused, setFocused] = useState(false);
+  const [contentH, setContentH] = useState(0);
   return (
     <View style={{ gap: space.sm }}>
-      <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textMuted }}>{label}</Text>
+      {label ? <Text style={{ fontSize: 13, fontWeight: '600', color: colors.textMuted }}>{label}</Text> : null}
       <TextInput
         placeholderTextColor={colors.textFaint}
         multiline={multiline}
+        onContentSizeChange={(e) => {
+          if (multiline && Platform.OS === 'web') setContentH(e.nativeEvent.contentSize.height);
+          onContentSizeChange?.(e);
+        }}
         onFocus={(e) => {
           setFocused(true);
           onFocus?.(e);
@@ -283,7 +462,11 @@ export function Field({ label, error, hint, style, multiline, onFocus, onBlur, .
         }}
         style={[
           styles.input,
-          multiline && { minHeight: 120, textAlignVertical: 'top', paddingTop: 14 },
+          // Natif : le champ multiligne grandit seul ; web : hauteur suivie (scrollHeight inclut déjà les marges internes)
+          multiline &&
+            (Platform.OS === 'web'
+              ? { textAlignVertical: 'top', height: Math.min(Math.max(52, contentH + 3), 220) }
+              : { textAlignVertical: 'top', maxHeight: 220 }),
           focused && { borderColor: colors.primary, backgroundColor: colors.surface },
           error && { borderColor: colors.danger },
           style,
@@ -343,7 +526,10 @@ export function Divider({ inset = 0 }: { inset?: number }) {
 /** Segmenté avec indicateur glissant (élément absolu sans enfant : seule exception autorisée à une largeur animée). */
 export function Segmented<T extends string>({ value, options, onChange }: { value: T; options: { value: T; label: string }[]; onChange: (v: T) => void }) {
   const [w, setW] = useState(0);
-  const idx = Math.max(0, options.findIndex((o) => o.value === value));
+  const idx = Math.max(
+    0,
+    options.findIndex((o) => o.value === value),
+  );
   const segW = w ? (w - 8) / options.length : 0;
   return (
     <View style={styles.segmented} accessibilityRole="tablist" onLayout={(e) => setW(e.nativeEvent.layout.width)}>
@@ -443,7 +629,11 @@ export function Collapsible({
         </Animated.View>
       </Pressable>
       {open ? (
-        <Animated.View entering={reduced ? undefined : FadeIn.duration(motion.base)} exiting={reduced ? undefined : FadeOut.duration(motion.fast)} style={styles.collapseBody}>
+        <Animated.View
+          entering={reduced ? undefined : FadeIn.duration(motion.base)}
+          exiting={reduced ? undefined : FadeOut.duration(motion.fast)}
+          style={styles.collapseBody}
+        >
           {children}
         </Animated.View>
       ) : null}
@@ -469,7 +659,17 @@ export function FoldBar({ count, allOpen, onToggleAll, label }: { count: number;
 /* ───────────────────────── Chargement & états vides ───────────────────────── */
 
 /** Bloc squelette : pulsation douce d'opacité (pas de spinner plein écran). */
-export function Skeleton({ width = '100%', height = 14, radius: r = 8, style }: { width?: number | `${number}%`; height?: number; radius?: number; style?: StyleProp<ViewStyle> }) {
+export function Skeleton({
+  width = '100%',
+  height = 14,
+  radius: r = 8,
+  style,
+}: {
+  width?: number | `${number}%`;
+  height?: number;
+  radius?: number;
+  style?: StyleProp<ViewStyle>;
+}) {
   const reduced = useReducedMotion();
   return (
     <Animated.View
@@ -534,7 +734,19 @@ export function Empty({ icon = 'leaf-outline', title, text, action }: { icon?: I
 /* ───────────────────────── Données ───────────────────────── */
 
 /** Tuile de chiffre clé : icône en pastille, grand nombre, libellé sur une ligne. */
-export function Stat({ value, label, tone = 'neutral', icon, onPress }: { value: number | string; label: string; tone?: Tone; icon: IconName; onPress?: () => void }) {
+export function Stat({
+  value,
+  label,
+  tone = 'neutral',
+  icon,
+  onPress,
+}: {
+  value: number | string;
+  label: string;
+  tone?: Tone;
+  icon: IconName;
+  onPress?: () => void;
+}) {
   const c = toneColors[tone];
   return (
     <Card style={styles.stat} onPress={onPress} accessibilityLabel={`${value} ${label}`}>
@@ -565,19 +777,67 @@ export function StatRow({ children }: { children: ReactNode }) {
   );
 }
 
-export function KeyValue({ label, value, missing }: { label: string; value?: string | null; missing?: boolean }) {
+export function KeyValue({ label, value, missing, suffix }: { label: string; value?: string | null; missing?: boolean; suffix?: ReactNode }) {
   return (
-    <View style={{ flexDirection: 'row', gap: space.md, paddingVertical: 6 }}>
+    <View style={{ flexDirection: 'row', gap: space.md, paddingVertical: 6, alignItems: 'center' }}>
       <Small style={{ width: 110 }}>{label}</Small>
-      <Body style={[{ flex: 1, fontWeight: '500' }, (missing || !value) && { color: colors.danger }]} selectable>
-        {value || 'Information manquante'}
-      </Body>
+      <View style={{ flex: 1, flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+        <Body style={[{ flexShrink: 1, fontWeight: '500' }, (missing || !value) && { color: colors.danger }]} selectable>
+          {value || 'Information manquante'}
+        </Body>
+        {value ? suffix : null}
+      </View>
     </View>
   );
 }
 
+/** Interrupteur « ce numéro est sur WhatsApp » : logo vert quand oui, gris barré quand non. */
+export function WaToggle({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <Pressable
+      onPress={onToggle}
+      accessibilityRole="switch"
+      accessibilityLabel="Numéro WhatsApp"
+      accessibilityState={{ checked: on }}
+      hitSlop={6}
+      style={({ pressed }) => ({
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        height: 44,
+        paddingHorizontal: 12,
+        borderRadius: radius.pill,
+        borderWidth: 1.5,
+        borderColor: on ? colors.whatsapp : colors.border,
+        backgroundColor: on ? 'rgba(31,143,78,0.10)' : colors.surface,
+        opacity: pressed ? 0.75 : 1,
+      })}
+    >
+      <Ionicons name="logo-whatsapp" size={18} color={on ? colors.whatsapp : colors.textFaint} />
+      <Text style={{ fontSize: 13, fontWeight: '600', color: on ? colors.whatsapp : colors.textFaint, textDecorationLine: on ? 'none' : 'line-through' }}>
+        WA
+      </Text>
+    </Pressable>
+  );
+}
+
+/** Petit logo WhatsApp : le numéro du frère est joignable sur WhatsApp. */
+export function WaMark({ size = 14 }: { size?: number }) {
+  return <Ionicons name="logo-whatsapp" size={size} color={colors.whatsapp} accessibilityLabel="Numéro WhatsApp" />;
+}
+
 /** Pastille d'initiales (aucune photo n'est stockée pour les frères). */
-export function Avatar({ name, size = 44, tone = 'primary' }: { name: string; size?: number; tone?: Tone }) {
+export function Avatar({ name, size = 44, tone = 'primary', image }: { name: string; size?: number; tone?: Tone; image?: string | null }) {
+  if (image) {
+    return (
+      <Image
+        source={{ uri: image }}
+        style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: colors.surfaceDeep }}
+        resizeMode="cover"
+        accessibilityLabel={name}
+      />
+    );
+  }
   const initials = name
     .split(/\s+/)
     .filter(Boolean)
@@ -586,7 +846,10 @@ export function Avatar({ name, size = 44, tone = 'primary' }: { name: string; si
     .join('');
   const c = toneColors[tone];
   return (
-    <View style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }} accessibilityElementsHidden>
+    <View
+      style={{ width: size, height: size, borderRadius: size / 2, backgroundColor: c.bg, alignItems: 'center', justifyContent: 'center' }}
+      accessibilityElementsHidden
+    >
       <Text style={{ color: c.fg, fontWeight: '700', fontSize: Math.round(size * 0.36) }}>{initials || '?'}</Text>
     </View>
   );
@@ -605,6 +868,7 @@ const styles = StyleSheet.create({
     gap: space.sm,
     ...shadow.card,
   },
+  heroVeil: { backgroundColor: 'rgba(12, 24, 18, 0.62)' },
   hero: {
     backgroundColor: colors.primaryDeep,
     borderRadius: radius.xl,
@@ -643,7 +907,15 @@ const styles = StyleSheet.create({
     minHeight: 52,
   },
   row: { flexDirection: 'row', alignItems: 'center', gap: space.md, paddingVertical: 14, paddingHorizontal: space.sm, borderRadius: radius.sm },
-  iconTile: { width: 36, height: 36, borderRadius: 12, borderCurve: 'continuous', backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
+  iconTile: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    borderCurve: 'continuous',
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   segmented: { flexDirection: 'row', backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, padding: 4 },
   segmentPill: { position: 'absolute', top: 4, bottom: 4, left: 4, borderRadius: radius.pill, backgroundColor: colors.primary },
   segment: { flex: 1, paddingVertical: 10, alignItems: 'center', borderRadius: radius.pill },
@@ -653,7 +925,15 @@ const styles = StyleSheet.create({
   collapseDot: { width: 8, height: 8, borderRadius: 4 },
   collapseBody: { paddingHorizontal: space.md, paddingBottom: space.md, gap: space.sm },
   foldBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  foldBtn: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingVertical: 6, paddingHorizontal: 12, borderRadius: radius.pill, backgroundColor: colors.primarySoft },
+  foldBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: radius.pill,
+    backgroundColor: colors.primarySoft,
+  },
   center: { alignItems: 'center', justifyContent: 'center', gap: space.md, padding: space.xl },
   emptyIcon: { width: 60, height: 60, borderRadius: 30, backgroundColor: colors.primarySoft, alignItems: 'center', justifyContent: 'center' },
   stat: { width: STAT_W, gap: space.sm, padding: space.lg },

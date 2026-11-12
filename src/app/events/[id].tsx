@@ -1,16 +1,41 @@
 import { useState } from 'react';
-import { Linking, Text, View } from 'react-native';
+import { Linking, Pressable, Text, View } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
+import { ContactActions } from '../../components/ContactActions';
 import { useFold } from '../../lib/useFold';
 import { toast } from '../../components/toast';
 import { Alert } from '../../lib/dialog';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { get, patch, post, errorMessage } from '../../lib/api';
-import type { Contact, WorkEvent } from '../../lib/types';
-import { CALL_STATUS, EVENT_STATUS, OUTCOME, fmtDate, fmtDateTime, fmtPhone, plural } from '../../lib/format';
-import { Avatar, Badge, Banner, Body, Button, Card, Chip, Collapsible, Divider, ErrorState, Field, H3, HeroCard, IconButton, Loading, Row, Screen, Section, Segmented, Small } from '../../components/ui';
+import type { Contact, Venue, WorkEvent } from '../../lib/types';
+import { CALL_STATUS, EVENT_STATUS, OUTCOME, fmtDateTime, fmtPhone, isWhatsapp, plural, fmtEventDate } from '../../lib/format';
+import {
+  Avatar,
+  Badge,
+  Banner,
+  Body,
+  Button,
+  Card,
+  Chip,
+  Collapsible,
+  Divider,
+  ErrorState,
+  Field,
+  H3,
+  HeroCard,
+  IconButton,
+  Loading,
+  Row,
+  Screen,
+  Section,
+  Segmented,
+  Small,
+  WaMark,
+} from '../../components/ui';
 import { colors, space } from '../../theme/tokens';
+import { useVenueImages, useVenueLookup } from '../../lib/images';
+import { WeekDayPicker } from '../../components/WeekDayPicker';
 
 const FOLD_KEYS = ['tasks', 'history'];
 const FOLD_OPEN = ['tasks'];
@@ -31,7 +56,12 @@ export default function EventDetail() {
   const qc = useQueryClient();
   const q = useQuery({ queryKey: ['work-event', id], queryFn: () => get<WorkEvent>(`/api/work-events/${id}`) });
   const contacts = useQuery({ queryKey: ['contacts'], queryFn: () => get<Contact[]>('/api/contacts') });
+  const venues = useQuery({ queryKey: ['venues'], queryFn: () => get<Venue[]>('/api/venues') });
+  const [venueId, setVenueId] = useState('');
+  const [congregationId, setCongregationId] = useState<string | null>(null);
   const [editing, setEditing] = useState(false);
+  const venueImage = useVenueImages();
+  const venueOf = useVenueLookup();
   const fold = useFold(FOLD_KEYS, FOLD_OPEN);
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
@@ -45,6 +75,8 @@ export default function EventDetail() {
     const e = q.data;
     if (!e) return;
     setDate(e.date);
+    setVenueId(e.venueId?._id ?? '');
+    setCongregationId(e.congregationId ?? null);
     setStartTime(e.startTime ?? '');
     setTasks(e.tasks.map((t) => ({ _id: t._id, label: t.label, category: t.category, description: t.description })));
     setResponsibleId(e.responsibleContactId?._id ?? null);
@@ -61,9 +93,13 @@ export default function EventDetail() {
   const save = useMutation({
     mutationFn: () =>
       patch(`/api/work-events/${id}`, {
+        venueId,
+        congregationId,
         date,
         startTime: startTime || null,
-        tasks: tasks.map((t) => ({ ...(t._id ? { _id: t._id } : {}), label: t.label, category: t.category, description: t.description })),
+        tasks: tasks
+          .filter((t) => t.label.trim())
+          .map((t) => ({ ...(t._id ? { _id: t._id } : {}), label: t.label.trim(), category: t.category, description: t.description })),
         responsibleContactId: responsibleId,
         postCallTimingOverride: postTiming === 'default' ? null : postTiming,
       }),
@@ -75,11 +111,16 @@ export default function EventDetail() {
     onError: (e) => Alert.alert('Enregistrement impossible', errorMessage(e)),
   });
   const cancel = useMutation({
+    meta: { success: 'Intervention annulée' },
     mutationFn: () => post(`/api/work-events/${id}/cancel`, { reason: 'Annulée par le propriétaire' }),
     onSuccess: invalidate,
     onError: (e) => Alert.alert('Erreur', errorMessage(e)),
   });
-  const reactivate = useMutation({ mutationFn: () => post(`/api/work-events/${id}/reactivate`), onSuccess: invalidate });
+  const reactivate = useMutation({
+    meta: { success: 'Intervention réactivée' },
+    mutationFn: () => post(`/api/work-events/${id}/reactivate`),
+    onSuccess: invalidate,
+  });
 
   const openDoc = async (docId: string) => {
     try {
@@ -94,6 +135,7 @@ export default function EventDetail() {
   if (q.isError && !q.data) return <ErrorState message={errorMessage(q.error)} onRetry={() => q.refetch()} />;
   const e = q.data!;
   const st = EVENT_STATUS[e.status];
+  const weekly = Boolean(venueOf(e.venueId?._id)?.weeklySchedule);
   const resp = e.responsibleContactId;
 
   if (editing) {
@@ -106,9 +148,30 @@ export default function EventDetail() {
           </>
         }
       >
-        <Banner tone="info" icon="information-circle-outline" title="Changement de date">
-          Les missions, les rappels et les messages non envoyés seront recalculés automatiquement.
-        </Banner>
+        <Section title="Salle du Royaume">
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+            {(venues.data ?? []).map((vn) => (
+              <Chip
+                key={vn._id}
+                label={vn.name}
+                active={venueId === vn._id}
+                onPress={() => {
+                  if (vn._id === venueId) return;
+                  setVenueId(vn._id);
+                  setCongregationId(null);
+                }}
+              />
+            ))}
+          </View>
+        </Section>
+        <Section title="Assemblée">
+          <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+            <Chip label="Toutes les assemblées" active={congregationId === null} onPress={() => setCongregationId(null)} />
+            {(venues.data?.find((vn) => vn._id === venueId)?.congregations ?? []).map((c) => (
+              <Chip key={c._id} label={c.name} active={congregationId === c._id} onPress={() => setCongregationId(c._id)} />
+            ))}
+          </View>
+        </Section>
         <Field label="Date des travaux (AAAA-MM-JJ)" value={date} onChangeText={setDate} autoCapitalize="none" />
         <Field label="Heure de début (facultatif, HH:MM)" value={startTime} onChangeText={setStartTime} placeholder="08:00" />
         <Section title="Rappel après travaux">
@@ -122,6 +185,12 @@ export default function EventDetail() {
             ]}
           />
         </Section>
+        {weekly && e.status !== 'cancelled' ? (
+          <Card>
+            <WeekDayPicker eventId={e._id} date={e.date} plannedDay={e.plannedDay} />
+          </Card>
+        ) : null}
+
         <Section title="Responsable">
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
             {(contacts.data ?? []).map((c) => (
@@ -133,10 +202,14 @@ export default function EventDetail() {
           {tasks.map((t, i) => (
             <Card key={t._id ?? `n${i}`} style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm, padding: space.md }}>
               <View style={{ flex: 1 }}>
-                <Body>{t.label}</Body>
-                {t.category ? <Small>{t.category}</Small> : null}
+                <Field
+                  label={t.category ? `Tâche · ${t.category}` : 'Tâche'}
+                  value={t.label}
+                  onChangeText={(label) => setTasks(tasks.map((x, k) => (k === i ? { ...x, label } : x)))}
+                  multiline
+                />
               </View>
-              <Button title="Retirer" variant="danger" compact onPress={() => setTasks(tasks.filter((_, k) => k !== i))} />
+              <IconButton icon="trash-outline" label="Retirer la tâche" tone="danger" onPress={() => setTasks(tasks.filter((_, k) => k !== i))} />
             </Card>
           ))}
           <View style={{ flexDirection: 'row', gap: space.sm, alignItems: 'flex-end' }}>
@@ -161,14 +234,14 @@ export default function EventDetail() {
 
   return (
     <Screen refreshing={q.isRefetching} onRefresh={() => q.refetch()}>
-      <HeroCard>
+      <HeroCard image={venueImage(e.venueId?._id)}>
         <Badge label={st.label} tone={e.status === 'cancelled' ? 'danger' : 'gold'} />
         <Text style={{ color: colors.onPrimary, fontSize: 26, fontWeight: '700', letterSpacing: -0.5, marginTop: space.sm }}>Salle de {e.venueId?.name}</Text>
         <Text style={{ color: colors.onPrimary, fontSize: 15, fontWeight: '600' }}>{e.congregationName}</Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginTop: space.xs }}>
           <Ionicons name="calendar-outline" size={15} color={colors.gold} />
           <Text style={{ color: colors.onPrimaryMuted, fontSize: 14 }}>
-            {fmtDate(e.date)}
+            {fmtEventDate(e, weekly)}
             {e.startTime ? ` · ${e.startTime}` : ''}
           </Text>
         </View>
@@ -180,17 +253,39 @@ export default function EventDetail() {
           ))}
         </View>
       </HeroCard>
-      {e.status === 'cancelled' ? <Banner tone="danger" title="Intervention annulée">{e.cancelledReason || 'Les rappels futurs ont été supprimés. L’historique est conservé.'}</Banner> : null}
+      {e.status === 'cancelled' ? (
+        <Banner tone="danger" title="Intervention annulée">
+          {e.cancelledReason || 'Rappels supprimés'}
+        </Banner>
+      ) : null}
 
       <Section title="Responsable">
-        <Card onPress={resp ? () => router.push(`/contacts/${resp._id}`) : undefined} accessibilityLabel={resp ? `Fiche de ${resp.fullName}` : undefined}>
+        {/* La fiche et les boutons Appeler / WhatsApp sont des zones distinctes (jamais un bouton dans un bouton) */}
+        <Card>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: space.md }}>
-            <Avatar name={resp?.fullName ?? '?'} size={48} tone={resp?.phones?.length ? 'primary' : 'danger'} />
-            <View style={{ flex: 1, gap: 2 }}>
-              <H3>{resp?.fullName ?? 'Responsable non renseigné'}</H3>
-              <Small style={!resp?.phones?.length ? { color: colors.danger } : undefined}>{resp?.phones?.[0] ? fmtPhone(resp.phones[0]) : 'Numéro manquant'}</Small>
-            </View>
-            {resp?.phones?.[0] ? <IconButton icon="call" label={`Appeler ${resp.fullName}`} tone="primary" onPress={() => Linking.openURL(`tel:+${resp.phones[0]}`)} /> : null}
+            <Pressable
+              onPress={resp ? () => router.push(`/contacts/${resp._id}`) : undefined}
+              disabled={!resp}
+              accessibilityRole="button"
+              accessibilityLabel={resp ? `Fiche de ${resp.fullName}` : undefined}
+              style={({ pressed }) => ({ flex: 1, flexDirection: 'row', alignItems: 'center', gap: space.md, opacity: pressed ? 0.7 : 1 })}
+            >
+              <Avatar name={resp?.fullName ?? '?'} size={48} tone={resp?.phones?.length ? 'primary' : 'danger'} />
+              <View style={{ flex: 1, gap: 2 }}>
+                <H3>{resp?.fullName ?? 'Responsable non renseigné'}</H3>
+                {resp?.phones?.length ? (
+                  resp.phones.map((p) => (
+                    <View key={p} style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                      <Small>{fmtPhone(p)}</Small>
+                      {isWhatsapp(resp, p) ? <WaMark /> : null}
+                    </View>
+                  ))
+                ) : (
+                  <Small style={{ color: colors.danger }}>Numéro manquant</Small>
+                )}
+              </View>
+            </Pressable>
+            <ContactActions contact={resp} compact />
           </View>
         </Card>
       </Section>
@@ -205,7 +300,14 @@ export default function EventDetail() {
                 <H3 style={{ flex: 1 }}>{t.label}</H3>
                 {e.status !== 'scheduled' ? <Badge label={o.label} tone={o.tone} /> : null}
               </View>
-              {t.category ? <Small>{t.category}{t.catalogRef ? ` · ${t.catalogRef}` : ''}</Small> : t.catalogRef ? <Small>{t.catalogRef}</Small> : null}
+              {t.category ? (
+                <Small>
+                  {t.category}
+                  {t.catalogRef ? ` · ${t.catalogRef}` : ''}
+                </Small>
+              ) : t.catalogRef ? (
+                <Small>{t.catalogRef}</Small>
+              ) : null}
               {t.description ? <Body>{t.description}</Body> : null}
               {cat ? (
                 <View style={{ gap: 4, marginTop: 4 }}>

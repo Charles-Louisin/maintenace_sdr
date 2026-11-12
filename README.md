@@ -18,7 +18,7 @@ npx expo start
 
 ## Builds et mises à jour (EAS)
 
-L’empreinte, Face ID et les notifications exigent un vrai build (pas Expo Go). Les builds utilisent l’**environnement EAS `production`** et le **canal `production`** :
+L’application est distribuée en **APK**, hors Play Store. L’empreinte, Face ID et les notifications exigent un vrai build (pas Expo Go). Les builds utilisent l’**environnement EAS `production`** et le **canal `production`** :
 
 ```bash
 npx eas-cli@latest login
@@ -29,7 +29,9 @@ npx eas-cli@latest build --profile production --platform android
 npx eas-cli@latest update --channel production --environment production --message "…"   # correctif JS sans rebuild
 ```
 
-Profils `eas.json` : `production` (stores, AAB), `production-apk` (même configuration, APK à installer directement), `development` (client de développement).
+Profils `eas.json` : `production` produit un **APK** à installer directement sur le téléphone (pas de Play Store) ; `development` produit le client de développement. À la fin du build, EAS affiche un lien et un QR code pour télécharger l’APK.
+
+Taille : l’APK ne contient que l’architecture `arm64-v8a` (tous les téléphones Android 64 bits) ; code natif compressé, code Java/Kotlin minifié, ressources inutilisées retirées (`expo-build-properties` dans `app.json`). Pour un ancien téléphone 32 bits, ajouter `armeabi-v7a` à `buildArchs` (APK plus lourd).
 
 ## Parcours
 

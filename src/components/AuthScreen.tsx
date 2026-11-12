@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ImageBackground, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ImageBackground, StyleSheet, Text, View } from 'react-native';
+import { KeyboardAwareScrollView } from 'react-native-keyboard-controller';
 import { Link } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
 import Animated, { FadeIn, FadeOut } from 'react-native-reanimated';
@@ -8,17 +9,43 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { z } from 'zod';
 import { useAuth } from '../lib/auth';
 import { LEGAL_LINKS } from '../lib/legal';
-import { errorMessage } from '../lib/api';
-import { biometricLabel } from '../lib/biometric';
+import { API_URL, api, errorMessage } from '../lib/api';
+import { biometricAvailable, biometricEnabled, biometricLabel, getBiometricKey } from '../lib/biometric';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { toast } from './toast';
 import { Emblem } from './brand';
 import { Banner, Button, Field } from './ui';
 import { colors, motion, radius, space } from '../theme/tokens';
 
 /**
- * Image de fond de l'écran de connexion.
- * Pour la changer : remplacez le fichier assets/login-background.jpg (format portrait, ~1080×1920).
+ * Image de fond de l'écran de connexion : celle choisie dans Paramètres › Apparence,
+ * sinon l'image intégrée. La dernière adresse connue est gardée pour un affichage immédiat.
  */
 const BACKGROUND = require('../../assets/login-background.jpg');
+const BG_CACHE = 'batis.loginBackground';
+
+function useLoginBackground() {
+  const [uri, setUri] = useState<string | null>(null);
+  useEffect(() => {
+    let alive = true;
+    AsyncStorage.getItem(BG_CACHE)
+      .then((u) => alive && u && setUri(u))
+      .catch(() => undefined);
+    api<{ loginBackground: string | null }>('/api/public/branding', { auth: false })
+      .then((b) => {
+        if (!alive) return;
+        const next = b.loginBackground ? `${API_URL}${b.loginBackground}` : null;
+        setUri(next);
+        if (next) AsyncStorage.setItem(BG_CACHE, next).catch(() => undefined);
+        else AsyncStorage.removeItem(BG_CACHE).catch(() => undefined);
+      })
+      .catch(() => undefined); // hors connexion : image gardée ou image intégrée
+    return () => {
+      alive = false;
+    };
+  }, []);
+  return uri ? { uri } : BACKGROUND;
+}
 
 const schema = z.object({
   email: z.email('Adresse e-mail invalide'),
@@ -91,34 +118,33 @@ function PasswordForm({ showForgot }: { showForgot: boolean }) {
   );
 }
 
-/** Connexion par empreinte / Face ID : aucun formulaire, un seul geste. L'invite s'ouvre d'elle-même. */
-function BiometricPanel({ onOther }: { onOther: () => void }) {
-  const { unlock } = useAuth();
+/**
+ * Connexion par empreinte / Face ID : un seul geste, mais jamais automatique —
+ * l'invite ne s'ouvre que lorsque vous appuyez sur le bouton (vous pouvez préférer le mot de passe).
+ * locked : session présente à déverrouiller ; sinon : connexion avec la clé du téléphone.
+ */
+function BiometricPanel({ onOther, locked }: { onOther: () => void; locked: boolean }) {
+  const { unlock, biometricSignIn } = useAuth();
   const [kind, setKind] = useState('empreinte');
-  const [busy, setBusy] = useState(true);
+  const [busy, setBusy] = useState(false);
   const [failed, setFailed] = useState(false);
 
   const tryUnlock = async () => {
     setBusy(true);
-    const ok = await unlock();
-    setBusy(false);
-    setFailed(!ok);
+    try {
+      const ok = locked ? await unlock() : await biometricSignIn();
+      setFailed(!ok);
+    } catch (e) {
+      setFailed(false);
+      toast.error(errorMessage(e));
+      onOther();
+    } finally {
+      setBusy(false);
+    }
   };
 
   useEffect(() => {
-    let alive = true;
-    (async () => {
-      const k = await biometricLabel();
-      if (alive) setKind(k);
-      const ok = await unlock();
-      if (!alive) return;
-      setBusy(false);
-      setFailed(!ok);
-    })();
-    return () => {
-      alive = false;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- invite unique à l'ouverture
+    biometricLabel().then(setKind);
   }, []);
 
   const isFace = kind === 'Face ID';
@@ -146,46 +172,62 @@ function BiometricPanel({ onOther }: { onOther: () => void }) {
  * - sinon : formulaire e-mail / mot de passe.
  */
 export function AuthScreen({ biometric = false }: { biometric?: boolean }) {
+  // Après déconnexion, l'empreinte reste proposée si elle est activée sur ce téléphone
+  const [bioReady, setBioReady] = useState<boolean>(biometric);
   const [usePassword, setUsePassword] = useState(!biometric);
+  const [checked, setChecked] = useState(biometric);
+  useEffect(() => {
+    if (biometric) return;
+    let alive = true;
+    (async () => {
+      const ok = (await biometricEnabled()) && Boolean(await getBiometricKey()) && (await biometricAvailable());
+      if (!alive) return;
+      setBioReady(ok);
+      setUsePassword(!ok);
+      setChecked(true);
+    })();
+    return () => {
+      alive = false;
+    };
+  }, [biometric]);
+  const background = useLoginBackground();
   return (
-    <ImageBackground source={BACKGROUND} resizeMode="cover" style={{ flex: 1, backgroundColor: colors.primaryDeep }}>
+    <ImageBackground source={background} onError={() => undefined} resizeMode="cover" style={{ flex: 1, backgroundColor: colors.primaryDeep }}>
       <StatusBar style="light" />
       <View style={styles.scrim} />
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
-        <ScrollView contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
-          <View style={styles.top}>
-            <Emblem size={72} onDark />
-            <Text style={styles.brand}>BATIS</Text>
-            <Text style={styles.brandSub}>Maintenance des Salles du Royaume</Text>
-            <Text style={styles.tagline}>Planifier · Suivre · Rendre compte</Text>
+      <KeyboardAwareScrollView bottomOffset={24} contentContainerStyle={{ flexGrow: 1 }} keyboardShouldPersistTaps="handled">
+        <View style={styles.top}>
+          <Emblem size={72} onDark />
+          <Text style={styles.brand}>BATIS</Text>
+          <Text style={styles.brandSub}>Maintenance des Salles du Royaume</Text>
+          <Text style={styles.tagline}>Planifier · Suivre · Rendre compte</Text>
+        </View>
+        <View style={styles.sheet}>
+          <View style={{ gap: 6 }}>
+            <Text style={styles.title}>{usePassword ? 'Connexion' : 'Bon retour'}</Text>
+            <Text style={styles.subtitle}>{usePassword ? 'Votre espace personnel de suivi' : 'Votre session vous attend.'}</Text>
           </View>
-          <View style={styles.sheet}>
-            <View style={{ gap: 6 }}>
-              <Text style={styles.title}>{usePassword ? 'Connexion' : 'Bon retour'}</Text>
-              <Text style={styles.subtitle}>{usePassword ? 'Votre espace personnel de suivi' : 'Votre session vous attend.'}</Text>
+          {!checked ? null : usePassword ? (
+            <Animated.View key="pw" entering={FadeIn.duration(motion.base)} exiting={FadeOut.duration(motion.fast)} style={{ gap: space.md }}>
+              <PasswordForm showForgot={!biometric} />
+              {bioReady ? <Button title="Utiliser l’empreinte" variant="ghost" icon="finger-print" onPress={() => setUsePassword(false)} /> : null}
+            </Animated.View>
+          ) : (
+            <Animated.View key="bio" entering={FadeIn.duration(motion.base)} exiting={FadeOut.duration(motion.fast)}>
+              <BiometricPanel onOther={() => setUsePassword(true)} locked={biometric} />
+            </Animated.View>
+          )}
+          {!biometric ? (
+            <View style={styles.legal}>
+              {LEGAL_LINKS.map((l) => (
+                <Link key={l.id} href={`/legal/${l.id}`} style={styles.legalLink}>
+                  {l.title}
+                </Link>
+              ))}
             </View>
-            {usePassword ? (
-              <Animated.View key="pw" entering={FadeIn.duration(motion.base)} exiting={FadeOut.duration(motion.fast)} style={{ gap: space.md }}>
-                <PasswordForm showForgot={!biometric} />
-                {biometric ? <Button title="Utiliser l’empreinte" variant="ghost" icon="finger-print" onPress={() => setUsePassword(false)} /> : null}
-              </Animated.View>
-            ) : (
-              <Animated.View key="bio" entering={FadeIn.duration(motion.base)} exiting={FadeOut.duration(motion.fast)}>
-                <BiometricPanel onOther={() => setUsePassword(true)} />
-              </Animated.View>
-            )}
-            {!biometric ? (
-              <View style={styles.legal}>
-                {LEGAL_LINKS.map((l) => (
-                  <Link key={l.id} href={`/legal/${l.id}`} style={styles.legalLink}>
-                    {l.title}
-                  </Link>
-                ))}
-              </View>
-            ) : null}
-          </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+          ) : null}
+        </View>
+      </KeyboardAwareScrollView>
     </ImageBackground>
   );
 }

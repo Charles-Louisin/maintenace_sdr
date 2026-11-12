@@ -54,7 +54,10 @@ function VolunteerForm({ id, v }: { id: string; v?: Detail }) {
         fullName: v.fullName,
         whatsapp: v.whatsapp,
         notes: v.notes ?? '',
-        skills: (v.skills ?? '').split(',').map((s) => s.trim()).filter(Boolean),
+        skills: (v.skills ?? '')
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
         active,
         weeklyAvailability: days.map((weekday) => ({ weekday })),
         unavailabilities: unav,
@@ -63,17 +66,20 @@ function VolunteerForm({ id, v }: { id: string; v?: Detail }) {
     },
     onSuccess: (r) => {
       done();
-      const reassigned = (r as { reassigned?: number })?.reassigned;
-      toast.success(reassigned ? `Enregistré · ${reassigned} mission(s) réattribuée(s)` : 'Volontaire enregistré');
+      const x = r as { reassigned?: number; rebalanced?: number };
+      const reassigned = x?.reassigned ?? x?.rebalanced;
+      toast.success(reassigned ? `Enregistré · ${reassigned} mission(s) redistribuée(s)` : 'Volontaire enregistré');
       router.back();
     },
     onError: (e) => Alert.alert('Enregistrement impossible', errorMessage(e)),
   });
   const remove = useMutation({
-    mutationFn: () => del<{ historyKept: boolean }>(`/api/volunteers/${id}`),
+    mutationFn: () => del<{ historyKept: boolean; reassigned?: number }>(`/api/volunteers/${id}`),
     onSuccess: (r) => {
       done();
-      toast.success(r.historyKept ? 'Volontaire supprimé · historique conservé' : 'Volontaire supprimé');
+      toast.success(
+        `Volontaire supprimé${r.historyKept ? ' · historique conservé' : ''}${r.reassigned ? ` · ${r.reassigned} mission(s) redistribuée(s)` : ''}`,
+      );
       router.back();
     },
     onError: (e) => Alert.alert('Suppression impossible', errorMessage(e)),
@@ -81,8 +87,25 @@ function VolunteerForm({ id, v }: { id: string; v?: Detail }) {
 
   return (
     <Screen footer={<Button title="Enregistrer" onPress={handleSubmit((x) => save.mutate(x))} loading={save.isPending} />}>
-      <Controller control={control} name="fullName" render={({ field }) => <Field label="Nom et prénom" value={field.value} onChangeText={field.onChange} error={formState.errors.fullName?.message} />} />
-      <Controller control={control} name="whatsapp" render={({ field }) => <Field label="Numéro WhatsApp" value={field.value} onChangeText={field.onChange} keyboardType="phone-pad" hint="Ex. 6XX XX XX XX ou +237…" error={formState.errors.whatsapp?.message} />} />
+      <Controller
+        control={control}
+        name="fullName"
+        render={({ field }) => <Field label="Nom et prénom" value={field.value} onChangeText={field.onChange} error={formState.errors.fullName?.message} />}
+      />
+      <Controller
+        control={control}
+        name="whatsapp"
+        render={({ field }) => (
+          <Field
+            label="Numéro WhatsApp"
+            value={field.value}
+            onChangeText={field.onChange}
+            keyboardType="phone-pad"
+            hint="Ex. 6XX XX XX XX ou +237…"
+            error={formState.errors.whatsapp?.message}
+          />
+        )}
+      />
       <Card style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
         <View style={{ flex: 1 }}>
           <H3>Actif</H3>
@@ -93,7 +116,12 @@ function VolunteerForm({ id, v }: { id: string; v?: Detail }) {
       <Section title="Jours disponibles (aucun = tous les jours)">
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
           {WEEKDAYS.map((d, i) => (
-            <Chip key={d} label={d} active={days.includes(i + 1)} onPress={() => setDays(days.includes(i + 1) ? days.filter((x) => x !== i + 1) : [...days, i + 1])} />
+            <Chip
+              key={d}
+              label={d}
+              active={days.includes(i + 1)}
+              onPress={() => setDays(days.includes(i + 1) ? days.filter((x) => x !== i + 1) : [...days, i + 1])}
+            />
           ))}
         </View>
       </Section>
@@ -121,7 +149,8 @@ function VolunteerForm({ id, v }: { id: string; v?: Detail }) {
           variant="secondary"
           compact
           onPress={() => {
-            if (!/^\d{4}-\d{2}-\d{2}$/.test(uFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(uTo) || uTo < uFrom) return Alert.alert('Dates invalides', 'Format AAAA-MM-JJ, la fin après le début.');
+            if (!/^\d{4}-\d{2}-\d{2}$/.test(uFrom) || !/^\d{4}-\d{2}-\d{2}$/.test(uTo) || uTo < uFrom)
+              return Alert.alert('Dates invalides', 'Format AAAA-MM-JJ, la fin après le début.');
             setUnav([...unav, { from: uFrom, to: uTo, reason: uReason }]);
             setUFrom('');
             setUTo('');
@@ -129,7 +158,13 @@ function VolunteerForm({ id, v }: { id: string; v?: Detail }) {
           }}
         />
       </Section>
-      <Controller control={control} name="skills" render={({ field }) => <Field label="Compétences (séparées par des virgules)" value={field.value} onChangeText={field.onChange} placeholder="Électricité, plomberie…" />} />
+      <Controller
+        control={control}
+        name="skills"
+        render={({ field }) => (
+          <Field label="Compétences (séparées par des virgules)" value={field.value} onChangeText={field.onChange} placeholder="Électricité, plomberie…" />
+        )}
+      />
       <Controller control={control} name="notes" render={({ field }) => <Field label="Notes" value={field.value} onChangeText={field.onChange} multiline />} />
 
       {v ? (
@@ -157,8 +192,9 @@ function VolunteerForm({ id, v }: { id: string; v?: Detail }) {
         <Button
           title="Supprimer le volontaire"
           variant="danger"
+          loading={remove.isPending}
           onPress={() =>
-            Alert.alert('Supprimer ce volontaire ?', 'S’il a déjà effectué des missions, il sera désactivé et son historique conservé. Ses missions futures seront réattribuées.', [
+            Alert.alert('Supprimer ce volontaire ?', 'Ses missions futures seront réattribuées.', [
               { text: 'Annuler', style: 'cancel' },
               { text: 'Supprimer', style: 'destructive', onPress: () => remove.mutate() },
             ])

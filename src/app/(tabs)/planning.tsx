@@ -7,7 +7,8 @@ import type { Venue, WorkEvent } from '../../lib/types';
 import { addDays, dateToIso, fmtDate, isoToDate, MONTH_NAMES, plural, relativeDays, todayIso, WEEKDAYS_SHORT } from '../../lib/format';
 import { useFold } from '../../lib/useFold';
 import { EventCard } from '../../components/EventCard';
-import { Chip, Collapsible, Empty, ErrorState, FoldBar, IconButton, Loading, Segmented } from '../../components/ui';
+import { FilterSheet } from '../../components/FilterSheet';
+import { Collapsible, Empty, ErrorState, FoldBar, IconButton, Loading, Segmented } from '../../components/ui';
 import { colors, radius, shadow, space } from '../../theme/tokens';
 
 type ViewMode = 'list' | 'month' | 'week' | 'day';
@@ -33,24 +34,61 @@ export default function Planning() {
   const [view, setView] = useState<ViewMode>('list');
   const [anchor, setAnchor] = useState(todayIso());
   const [selected, setSelected] = useState<string | null>(null);
-  const [venueId, setVenueId] = useState<string | null>(null);
-  const [category, setCategory] = useState<string | null>(null);
+  // Filtres à choix multiple (panneaux du bas)
+  const [fVenues, setFVenues] = useState<string[]>([]);
+  const [fCongs, setFCongs] = useState<string[]>([]);
+  const [fCats, setFCats] = useState<string[]>([]);
+  const [fDates, setFDates] = useState<string[]>([]);
   const [responsible, setResponsible] = useState('');
   const [from, to] = range(view, anchor);
 
   const venues = useQuery({ queryKey: ['venues'], queryFn: () => get<Venue[]>('/api/venues') });
   const categories = useQuery({ queryKey: ['categories'], queryFn: () => get<string[]>('/api/work-events/categories') });
   const params = new URLSearchParams({ from, to });
-  if (venueId) params.set('venueId', venueId);
-  if (category) params.set('category', category);
   if (responsible.trim().length >= 2) params.set('responsible', responsible.trim());
   const q = useQuery({ queryKey: ['work-events', params.toString()], queryFn: () => get<WorkEvent[]>(`/api/work-events?${params}`) });
 
+  const filteredEvents = useMemo(
+    () =>
+      (q.data ?? []).filter(
+        (e) =>
+          (!fVenues.length || fVenues.includes(e.venueId?._id)) &&
+          (!fCongs.length || fCongs.includes(e.congregationId ?? `all:${e.venueId?._id}`)) &&
+          (!fCats.length || e.tasks.some((t) => fCats.includes(t.category))) &&
+          (!fDates.length || fDates.includes(e.date)),
+      ),
+    [q.data, fVenues, fCongs, fCats, fDates],
+  );
+  const filterOptions = useMemo(() => {
+    const evs = q.data ?? [];
+    const countBy = (keyOf: (e: WorkEvent) => string[]) => {
+      const m = new Map<string, number>();
+      for (const e of evs) for (const k of new Set(keyOf(e))) m.set(k, (m.get(k) ?? 0) + 1);
+      return m;
+    };
+    const vCount = countBy((e) => [e.venueId?._id]);
+    const cCount = countBy((e) => [e.congregationId ?? `all:${e.venueId?._id}`]);
+    const kCount = countBy((e) => e.tasks.map((t) => t.category).filter(Boolean));
+    const dCount = countBy((e) => [e.date]);
+    const vs = venues.data ?? [];
+    return {
+      venues: vs.map((v) => ({ value: v._id, label: v.name, count: vCount.get(v._id) ?? 0 })),
+      congs: vs
+        .filter((v) => !fVenues.length || fVenues.includes(v._id))
+        .flatMap((v) => [
+          { value: `all:${v._id}`, label: 'Toutes les assemblées', hint: v.name, count: cCount.get(`all:${v._id}`) ?? 0 },
+          ...v.congregations.map((c) => ({ value: c._id, label: c.name, hint: v.name, count: cCount.get(c._id) ?? 0 })),
+        ]),
+      cats: (categories.data ?? []).map((c) => ({ value: c, label: c, count: kCount.get(c) ?? 0 })),
+      dates: [...dCount.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([d, n]) => ({ value: d, label: fmtDate(d), count: n })),
+    };
+  }, [q.data, venues.data, categories.data, fVenues]);
+
   const groups = useMemo(() => {
     const m = new Map<string, WorkEvent[]>();
-    for (const e of q.data ?? []) m.set(e.date, [...(m.get(e.date) ?? []), e]);
+    for (const e of filteredEvents) m.set(e.date, [...(m.get(e.date) ?? []), e]);
     return [...m.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([date, events]) => ({ date, events }));
-  }, [q.data]);
+  }, [filteredEvents]);
   const visible = view === 'month' && selected ? groups.filter((g) => g.date === selected) : groups;
   const keys = useMemo(() => visible.map((g) => g.date), [visible]);
   // Ouverts par défaut : les deux prochaines dates (vue d'ensemble repliée pour le reste)
@@ -80,7 +118,10 @@ export default function Planning() {
     const first = isoToDate(from);
     const lead = (first.getDay() + 6) % 7;
     const days = isoToDate(to).getDate();
-    const cells: (string | null)[] = [...Array(lead).fill(null), ...Array.from({ length: days }, (_, i) => dateToIso(new Date(first.getFullYear(), first.getMonth(), i + 1, 12)))];
+    const cells: (string | null)[] = [
+      ...Array(lead).fill(null),
+      ...Array.from({ length: days }, (_, i) => dateToIso(new Date(first.getFullYear(), first.getMonth(), i + 1, 12))),
+    ];
     while (cells.length % 7) cells.push(null);
     return (
       <View style={styles.calendar}>
@@ -106,8 +147,12 @@ export default function Planning() {
                   style={styles.dayCell}
                 >
                   {iso ? (
-                    <View style={[styles.dayInner, sel && { backgroundColor: colors.primary }, isToday && !sel && { borderWidth: 1.5, borderColor: colors.gold }]}>
-                      <Text style={{ fontSize: 15, fontWeight: isToday || sel ? '700' : '500', color: sel ? colors.onPrimary : colors.text }}>{isoToDate(iso).getDate()}</Text>
+                    <View
+                      style={[styles.dayInner, sel && { backgroundColor: colors.primary }, isToday && !sel && { borderWidth: 1.5, borderColor: colors.gold }]}
+                    >
+                      <Text style={{ fontSize: 15, fontWeight: isToday || sel ? '700' : '500', color: sel ? colors.onPrimary : colors.text }}>
+                        {isoToDate(iso).getDate()}
+                      </Text>
                       <View style={[styles.dot, { backgroundColor: n ? (sel ? colors.onPrimary : colors.primary) : 'transparent' }]} />
                     </View>
                   ) : null}
@@ -147,28 +192,29 @@ export default function Planning() {
       {view === 'month' ? calendar() : null}
       <View style={styles.search}>
         <Ionicons name="search" size={17} color={colors.textFaint} />
-        <TextInput value={responsible} onChangeText={setResponsible} placeholder="Rechercher un responsable" placeholderTextColor={colors.textFaint} style={styles.searchInput} />
+        <TextInput
+          value={responsible}
+          onChangeText={setResponsible}
+          placeholder="Rechercher un responsable"
+          placeholderTextColor={colors.textFaint}
+          style={styles.searchInput}
+        />
       </View>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-        <Chip label="Toutes les salles" active={!venueId} onPress={() => setVenueId(null)} />
-        {(venues.data ?? []).map((v) => (
-          <Chip key={v._id} label={v.name} active={venueId === v._id} onPress={() => setVenueId(venueId === v._id ? null : v._id)} />
-        ))}
+        <FilterSheet label="Salles" options={filterOptions.venues} selected={fVenues} onChange={setFVenues} />
+        <FilterSheet label="Assemblées" options={filterOptions.congs} selected={fCongs} onChange={setFCongs} />
+        <FilterSheet label="Travaux" options={filterOptions.cats} selected={fCats} onChange={setFCats} />
+        <FilterSheet label="Dates" options={filterOptions.dates} selected={fDates} onChange={setFDates} />
       </ScrollView>
-      {categories.data?.length ? (
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-          <Chip label="Tous les travaux" active={!category} onPress={() => setCategory(null)} />
-          {categories.data.map((c) => (
-            <Chip key={c} label={c} active={category === c} onPress={() => setCategory(category === c ? null : c)} />
-          ))}
-        </ScrollView>
-      ) : null}
       {visible.length ? (
         <FoldBar
           count={visible.length}
           allOpen={fold.allOpen}
           onToggleAll={fold.toggleAll}
-          label={`${plural(visible.reduce((n, g) => n + g.events.length, 0), 'intervention')} · ${plural(visible.length, 'date')}`}
+          label={`${plural(
+            visible.reduce((n, g) => n + g.events.length, 0),
+            'intervention',
+          )} · ${plural(visible.length, 'date')}`}
         />
       ) : null}
     </View>
@@ -190,7 +236,7 @@ export default function Planning() {
       removeClippedSubviews
       keyboardShouldPersistTaps="handled"
       refreshControl={<RefreshControl refreshing={q.isRefetching} onRefresh={() => void q.refetch()} tintColor={colors.primary} colors={[colors.primary]} />}
-      ListEmptyComponent={<Empty icon="calendar-clear-outline" title="Aucune intervention" text="Aucune intervention ne correspond à cette période ou à ces filtres." />}
+      ListEmptyComponent={<Empty icon="calendar-clear-outline" title="Aucune intervention" />}
       renderItem={({ item: g }) => {
         const past = g.date < today;
         return (
@@ -221,6 +267,14 @@ const styles = StyleSheet.create({
   dot: { width: 5, height: 5, borderRadius: 3, marginTop: 2 },
   periodBar: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   period: { fontSize: 17, fontWeight: '700', color: colors.text, letterSpacing: -0.2 },
-  search: { flexDirection: 'row', alignItems: 'center', gap: space.sm, backgroundColor: colors.surfaceAlt, borderRadius: radius.pill, paddingHorizontal: space.lg, minHeight: 48 },
+  search: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: space.sm,
+    backgroundColor: colors.surfaceAlt,
+    borderRadius: radius.pill,
+    paddingHorizontal: space.lg,
+    minHeight: 48,
+  },
   searchInput: { flex: 1, paddingVertical: 12, fontSize: 15, color: colors.text },
 });

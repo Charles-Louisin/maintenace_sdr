@@ -1,6 +1,17 @@
 import { useEffect, useState } from 'react';
 import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeInUp, FadeOutDown, LinearTransition, useReducedMotion } from 'react-native-reanimated';
+import Animated, {
+  FadeInDown,
+  FadeOutUp,
+  LinearTransition,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
+import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
+import { scheduleOnRN } from 'react-native-worklets';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { Ionicons } from '@expo/vector-icons';
@@ -9,7 +20,7 @@ import { colors, motion, radius, space } from '../theme/tokens';
 /**
  * Toasts : confirmations non bloquantes (enregistré, validé, copié…).
  * Les confirmations d'actions irréversibles restent des boîtes de dialogue.
- * Pile de 3 au maximum, au-dessus de la barre d'onglets ; glisser n'est pas nécessaire : un appui ferme.
+ * Pile de 3 au maximum, en haut de l'écran. Fermeture : glisser sur le côté (ou appuyer).
  */
 type Tone = 'success' | 'error' | 'info';
 interface Item {
@@ -53,28 +64,71 @@ export function ToastHost() {
     };
   }, []);
 
+  const close = (id: number) => setItems((cur) => cur.filter((x) => x.id !== id));
   return (
-    <View pointerEvents="box-none" style={[StyleSheet.absoluteFill, { justifyContent: 'flex-end', paddingBottom: insets.bottom + 76, paddingHorizontal: space.lg }]}>
-      {items.map((i) => (
+    <View
+      pointerEvents="box-none"
+      style={[StyleSheet.absoluteFill, { justifyContent: 'flex-start', paddingTop: insets.top + space.sm, paddingHorizontal: space.lg }]}
+    >
+      {[...items].reverse().map((i) => (
         <Animated.View
           key={i.id}
-          entering={reduced ? undefined : FadeInUp.duration(motion.base).easing(motion.easeOut)}
-          exiting={reduced ? undefined : FadeOutDown.duration(motion.fast)}
+          entering={reduced ? undefined : FadeInDown.duration(motion.base).easing(motion.easeOut)}
+          exiting={reduced ? undefined : FadeOutUp.duration(motion.fast)}
           layout={reduced ? undefined : LinearTransition.duration(motion.base)}
-          style={{ marginTop: space.sm }}
+          style={{ marginBottom: space.sm }}
         >
-          <Pressable
-            onPress={() => setItems((cur) => cur.filter((x) => x.id !== i.id))}
-            accessibilityRole="alert"
-            accessibilityLabel={i.message}
-            style={styles.toast}
-          >
-            <Ionicons name={ICON[i.tone]} size={20} color={TINT[i.tone]} />
-            <Text style={styles.text}>{i.message}</Text>
-          </Pressable>
+          <SwipeToast item={i} onClose={() => close(i.id)} />
         </Animated.View>
       ))}
     </View>
+  );
+}
+
+/** Un toast qui suit le doigt horizontalement ; lâché assez loin (ou d'un geste rapide), il sort de l'écran. */
+function SwipeToast({ item, onClose }: { item: Item; onClose: () => void }) {
+  const x = useSharedValue(0);
+  const pan = usePanGesture({
+    activeOffsetX: [-8, 8],
+    failOffsetY: [-14, 14],
+    onUpdate: (e) => {
+      'worklet';
+      x.set(e.translationX);
+    },
+    onDeactivate: (e) => {
+      'worklet';
+      const dx = e.translationX;
+      if (Math.abs(dx) > 90 || Math.abs(e.velocityX) > 650) {
+        const dir = Math.sign(dx || e.velocityX) || 1;
+        x.set(
+          withTiming(dir * 480, { duration: 180 }, (finished) => {
+            if (finished) scheduleOnRN(onClose);
+          }),
+        );
+      } else {
+        x.set(withSpring(0, { duration: 400, dampingRatio: 0.8, velocity: e.velocityX }));
+      }
+    },
+  });
+  const style = useAnimatedStyle(() => ({
+    transform: [{ translateX: x.get() }],
+    opacity: 1 - Math.min(Math.abs(x.get()) / 320, 0.7),
+  }));
+  return (
+    <GestureDetector gesture={pan}>
+      <Animated.View style={style}>
+        <Pressable
+          onPress={onClose}
+          accessibilityRole="alert"
+          accessibilityLabel={item.message}
+          accessibilityHint="Glisser sur le côté ou appuyer pour fermer"
+          style={styles.toast}
+        >
+          <Ionicons name={ICON[item.tone]} size={20} color={TINT[item.tone]} />
+          <Text style={styles.text}>{item.message}</Text>
+        </Pressable>
+      </Animated.View>
+    </GestureDetector>
   );
 }
 

@@ -1,17 +1,17 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, useEffect, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import * as DocumentPicker from 'expo-document-picker';
-import { Ionicons, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, get, errorMessage } from '../../lib/api';
-import { Alert } from '../../lib/dialog';
+import { get, errorMessage } from '../../lib/api';
 import type { ImportBatch } from '../../lib/types';
 import { BATCH_STATUS, DOC_KIND, dateToIso, fmtDate, fmtDateTime, plural } from '../../lib/format';
 import { useFold } from '../../lib/useFold';
-import { toast } from '../../components/toast';
-import { Badge, Banner, Button, Card, Collapsible, Empty, ErrorState, FoldBar, Loading, Screen, Small } from '../../components/ui';
+import { startUpload } from '../../lib/uploads';
+import { Badge, Banner, Card, Collapsible, Empty, ErrorState, FoldBar, Loading, Screen, Small } from '../../components/ui';
 import { colors, radius, shadow, space } from '../../theme/tokens';
+import { UploadButton } from '../../components/UploadButton';
 
 const TYPES = [
   'application/pdf',
@@ -31,16 +31,16 @@ interface UploadResult {
 
 /** Trois fiches inclinées : illustration statique, légère (aucune image à charger). */
 function FilesArt() {
-  const tile = (icon: keyof typeof MaterialCommunityIcons.glyphMap, color: string, rotate: string, y: number, z: number) => (
+  const tile = (icon: keyof typeof Ionicons.glyphMap, color: string, rotate: string, y: number, z: number) => (
     <View style={[styles.tile, { transform: [{ translateY: y }, { rotate }], zIndex: z }]}>
-      <MaterialCommunityIcons name={icon} size={30} color={color} />
+      <Ionicons name={icon} size={30} color={color} />
     </View>
   );
   return (
     <View style={styles.art} accessibilityElementsHidden>
-      {tile('file-pdf-box', '#C0392B', '-10deg', 10, 1)}
-      {tile('file-excel-box', '#1F7A45', '0deg', -6, 2)}
-      {tile('file-image', '#3C5A78', '10deg', 10, 1)}
+      {tile('document-text', '#C0392B', '-10deg', 10, 1)}
+      {tile('grid', '#1F7A45', '0deg', -6, 2)}
+      {tile('image', '#3C5A78', '10deg', 10, 1)}
       <View style={styles.plinth} />
     </View>
   );
@@ -48,7 +48,6 @@ function FilesArt() {
 
 export default function Documents() {
   const qc = useQueryClient();
-  const [uploading, setUploading] = useState(false);
   const [last, setLast] = useState<UploadResult | null>(null);
   const q = useQuery({
     queryKey: ['batches'],
@@ -68,10 +67,17 @@ export default function Documents() {
   const defaults = useMemo(() => keys.slice(0, 1), [keys]);
   const fold = useFold(keys, defaults);
 
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+
   const pick = async () => {
     const res = await DocumentPicker.getDocumentAsync({ multiple: true, type: TYPES, copyToCacheDirectory: true });
     if (res.canceled || !res.assets.length) return;
-    setUploading(true);
     setLast(null);
     try {
       const form = new FormData();
@@ -80,21 +86,25 @@ export default function Documents() {
         if (a.file) form.append('files', a.file, a.name);
         else form.append('files', { uri: a.uri, name: a.name, type: a.mimeType ?? 'application/octet-stream' } as unknown as Blob);
       }
-      const r = await api<UploadResult>('/api/documents/upload', { method: 'POST', form }).catch((e) => {
-        const p = (e as { payload?: UploadResult }).payload;
-        if (p && Array.isArray(p.duplicates)) return p;
-        throw e;
+      // Envoi suivi : barre de progression, arrêt possible, continue si l'on quitte l'écran
+      const label = plural(res.assets.length, 'document', 'documents');
+      const r = await startUpload<UploadResult>({
+        key: 'documents',
+        label: `Import de ${label}`,
+        path: '/api/documents/upload',
+        form,
+        successMessage: `Import de ${label} terminé — analyse en cours`,
+        accept: (e) => {
+          const p = (e as { payload?: UploadResult }).payload;
+          return p && Array.isArray(p.duplicates) ? p : null;
+        },
       });
-      setLast(r);
       qc.invalidateQueries({ queryKey: ['batches'] });
-      if (r.batchId) {
-        toast.success(`${plural(r.accepted.length, 'document importé', 'documents importés')} — analyse en cours`);
-        router.push(`/documents/${r.batchId}`);
-      }
-    } catch (e) {
-      Alert.alert('Importation impossible', errorMessage(e));
-    } finally {
-      setUploading(false);
+      if (!r) return;
+      if (mounted.current) setLast(r);
+      if (r.batchId && mounted.current) router.push(`/documents/${r.batchId}`);
+    } catch {
+      // erreur déjà signalée par un toast
     }
   };
 
@@ -104,17 +114,25 @@ export default function Documents() {
         <FilesArt />
         <View style={{ alignItems: 'center', gap: space.sm }}>
           <Text style={styles.heroTitle}>Importer vos documents</Text>
-          <Small style={{ textAlign: 'center', maxWidth: 290 }}>Programmes, plannings ou fiches de tâches en PDF, Excel, Word ou image. Sélectionnez-les ensemble.</Small>
+          <Small style={{ textAlign: 'center', maxWidth: 290 }}>PDF, Excel, Word ou image</Small>
         </View>
-        <Button title="Choisir des fichiers" icon="cloud-upload-outline" onPress={pick} loading={uploading} />
+        <UploadButton uploadKey="documents" title="Choisir des fichiers" icon="cloud-upload-outline" variant="primary" onPress={() => void pick()} />
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
           <Ionicons name="shield-checkmark-outline" size={14} color={colors.success} />
-          <Small>Analyse par IA · rien n’est enregistré sans votre validation</Small>
+          <Small>Rien n’est enregistré sans validation</Small>
         </View>
       </Card>
 
-      {last?.duplicates.length ? <Banner tone="warning" title="Déjà importés (ignorés)">{last.duplicates.map((d) => d.name).join(', ')}</Banner> : null}
-      {last?.rejected.length ? <Banner tone="danger" title="Fichiers refusés">{last.rejected.map((d) => `${d.name} : ${d.reason}`).join('\n')}</Banner> : null}
+      {last?.duplicates.length ? (
+        <Banner tone="warning" title="Déjà importés (ignorés)">
+          {last.duplicates.map((d) => d.name).join(', ')}
+        </Banner>
+      ) : null}
+      {last?.rejected.length ? (
+        <Banner tone="danger" title="Fichiers refusés">
+          {last.rejected.map((d) => `${d.name} : ${d.reason}`).join('\n')}
+        </Banner>
+      ) : null}
 
       {q.isPending ? (
         <Loading rows={2} />
@@ -124,7 +142,12 @@ export default function Documents() {
         <Empty icon="folder-open-outline" title="Aucune importation" text="Vos programmes importés apparaîtront ici." />
       ) : (
         <View style={{ gap: space.md }}>
-          <FoldBar count={groups.length} allOpen={fold.allOpen} onToggleAll={fold.toggleAll} label={`Historique · ${plural(q.data?.length ?? 0, 'importation')}`} />
+          <FoldBar
+            count={groups.length}
+            allOpen={fold.allOpen}
+            onToggleAll={fold.toggleAll}
+            label={`Historique · ${plural(q.data?.length ?? 0, 'importation')}`}
+          />
           {groups.map((g) => (
             <Collapsible
               key={g.date}
@@ -137,7 +160,12 @@ export default function Documents() {
               {g.items.map((b) => {
                 const st = BATCH_STATUS[b.status] ?? { label: b.status, tone: 'neutral' as const };
                 return (
-                  <Pressable key={b._id} onPress={() => router.push(`/documents/${b._id}`)} accessibilityRole="button" style={({ pressed }) => [styles.batch, pressed && { backgroundColor: colors.surfaceDeep }]}>
+                  <Pressable
+                    key={b._id}
+                    onPress={() => router.push(`/documents/${b._id}`)}
+                    accessibilityRole="button"
+                    style={({ pressed }) => [styles.batch, pressed && { backgroundColor: colors.surfaceDeep }]}
+                  >
                     <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', gap: space.sm }}>
                       <Small>{fmtDateTime(b.createdAt)}</Small>
                       <Badge label={b.status === 'processing' ? `${st.label} · ${b.progress?.percent ?? 0} %` : st.label} tone={st.tone} />

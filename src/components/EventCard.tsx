@@ -2,9 +2,10 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { router } from 'expo-router';
 import { Ionicons } from '@expo/vector-icons';
 import type { WorkEvent } from '../lib/types';
-import { CALL_STATUS, EVENT_STATUS, fmtDate, fmtPhone } from '../lib/format';
-import { Badge, Small } from './ui';
+import { CALL_STATUS, EVENT_STATUS, fmtDate, fmtPhone, isWhatsapp, fmtEventDate } from '../lib/format';
+import { Badge, Small, WaMark, VenueThumb } from './ui';
 import { colors, radius, space } from '../theme/tokens';
+import { useVenueImages, useVenueLookup } from '../lib/images';
 
 function CallLine({ label, call, eventActive }: { label: string; call?: WorkEvent['calls'][number]; eventActive: boolean }) {
   if (!call) return null;
@@ -34,6 +35,8 @@ export function EventCard({ e, showDate = true }: { e: WorkEvent; showDate?: boo
   const st = EVENT_STATUS[e.status];
   const resp = e.responsibleContactId;
   const active = e.status !== 'cancelled';
+  const venueImage = useVenueImages();
+  const venueOf = useVenueLookup();
   return (
     <Pressable
       onPress={() => router.push(`/events/${e._id}`)}
@@ -42,11 +45,12 @@ export function EventCard({ e, showDate = true }: { e: WorkEvent; showDate?: boo
       style={({ pressed }) => [styles.item, pressed && { backgroundColor: colors.surfaceDeep }]}
     >
       <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: space.sm }}>
+        <VenueThumb image={venueImage(e.venueId?._id)} size={40} />
         <View style={{ flex: 1, gap: 2 }}>
           <Text style={styles.title} numberOfLines={1}>
             {e.venueId?.name ?? 'Salle inconnue'} · {e.congregationName || 'Assemblée'}
           </Text>
-          {showDate ? <Small>{fmtDate(e.date)}</Small> : null}
+          {showDate || venueOf(e.venueId?._id)?.weeklySchedule ? <Small>{fmtEventDate(e, Boolean(venueOf(e.venueId?._id)?.weeklySchedule))}</Small> : null}
         </View>
         <Badge label={st.label} tone={st.tone} />
       </View>
@@ -58,6 +62,7 @@ export function EventCard({ e, showDate = true }: { e: WorkEvent; showDate?: boo
         <Small numberOfLines={1} style={[{ flex: 1 }, !resp?.phones?.length && { color: colors.danger }]}>
           {resp ? `${resp.fullName}${resp.phones[0] ? ` · ${fmtPhone(resp.phones[0])}` : ' · numéro manquant'}` : 'Responsable non renseigné'}
         </Small>
+        {isWhatsapp(resp, resp?.phones?.[0]) ? <WaMark /> : null}
       </View>
       <View style={{ gap: 6 }}>
         <CallLine label="Avant" call={e.calls?.find((c) => c.type === 'pre')} eventActive={active} />

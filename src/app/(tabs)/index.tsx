@@ -6,9 +6,27 @@ import { get, errorMessage } from '../../lib/api';
 import { useAuth } from '../../lib/auth';
 import { usePushPermission } from '../../lib/notifications';
 import type { Dashboard } from '../../lib/types';
-import { fmtDate, relativeDays, MONTH_NAMES, todayIso } from '../../lib/format';
-import { Avatar, Badge, Banner, Button, Card, Divider, ErrorState, HeroCard, Loading, Row, Screen, Section, Small, Stat, StatRow, Title } from '../../components/ui';
+import { fmtDate, relativeDays, MONTH_NAMES, todayIso, fmtEventDate } from '../../lib/format';
+import {
+  Avatar,
+  Badge,
+  Banner,
+  Button,
+  Card,
+  Divider,
+  ErrorState,
+  HeroCard,
+  Loading,
+  Row,
+  Screen,
+  Section,
+  Small,
+  Stat,
+  StatRow,
+  Title,
+} from '../../components/ui';
 import { colors, space } from '../../theme/tokens';
+import { useVenueImages, useVenueLookup } from '../../lib/images';
 
 function monthOf(m: number) {
   const n = MONTH_NAMES[m - 1].toLowerCase();
@@ -19,6 +37,8 @@ export default function Home() {
   const { owner } = useAuth();
   const push = usePushPermission(true);
   const q = useQuery({ queryKey: ['dashboard'], queryFn: () => get<Dashboard>('/api/dashboard') });
+  const venueImage = useVenueImages();
+  const venueOf = useVenueLookup();
 
   if (q.isPending) return <Loading rows={3} />;
   if (q.isError && !q.data) return <ErrorState message={errorMessage(q.error)} onRetry={() => q.refetch()} />;
@@ -43,13 +63,16 @@ export default function Home() {
           <Title>Bonjour{firstName ? `, ${firstName}` : ''}</Title>
           <Small>{fmtDate(todayIso())} · voici votre activité</Small>
         </View>
-        <Avatar name={owner?.displayName ?? 'P'} tone="gold" size={48} />
+        <Avatar name={owner?.displayName ?? 'P'} tone="gold" size={48} image={owner?.avatarUrl} />
       </View>
 
       {push.state === 'denied' || (push.state !== 'unsupported' && !d.notificationsEnabled) ? (
-        <Banner tone="warning" icon="notifications-off-outline" title="Notifications désactivées" action={<Button title="Activer" compact variant="secondary" onPress={push.retry} style={{ alignSelf: 'flex-start', marginTop: 6 }} />}>
-          Vous ne recevrez pas les rappels d’appels sur ce téléphone. Les échéances restent enregistrées sur le serveur.
-        </Banner>
+        <Banner
+          tone="warning"
+          icon="notifications-off-outline"
+          title="Notifications désactivées"
+          action={<Button title="Activer" compact variant="secondary" onPress={push.retry} style={{ alignSelf: 'flex-start', marginTop: 6 }} />}
+        ></Banner>
       ) : null}
 
       <StatRow>
@@ -59,7 +82,7 @@ export default function Home() {
       </StatRow>
 
       {next ? (
-        <HeroCard onPress={() => router.push(`/events/${next._id}`)}>
+        <HeroCard onPress={() => router.push(`/events/${next._id}`)} image={venueImage(next.venueId?._id)}>
           <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
             <Text style={{ color: colors.onPrimaryMuted, fontSize: 13, fontWeight: '600' }}>Prochaine intervention</Text>
             <Ionicons name="arrow-forward" size={18} color={colors.onPrimary} />
@@ -68,7 +91,7 @@ export default function Home() {
           <Text style={{ color: colors.onPrimary, fontSize: 16, fontWeight: '600' }}>
             {next.venueId?.name} · {next.congregationName}
           </Text>
-          <Text style={{ color: colors.onPrimaryMuted, fontSize: 14 }}>{fmtDate(next.date)}</Text>
+          <Text style={{ color: colors.onPrimaryMuted, fontSize: 14 }}>{fmtEventDate(next, Boolean(venueOf(next.venueId?._id)?.weeklySchedule))}</Text>
           <Text style={{ color: colors.gold, fontSize: 13, marginTop: space.sm }} numberOfLines={2}>
             {next.tasks.map((t) => t.label).join(' · ')}
           </Text>
@@ -112,7 +135,12 @@ export default function Home() {
             {d.upcoming.slice(1).map((e, i) => (
               <View key={e._id}>
                 {i > 0 ? <Divider inset={56} /> : null}
-                <Row icon="calendar-clear-outline" title={`${e.venueId?.name} · ${e.congregationName}`} subtitle={`${fmtDate(e.date)} · ${relativeDays(e.date)}`} onPress={() => router.push(`/events/${e._id}`)} />
+                <Row
+                  icon="calendar-clear-outline"
+                  title={`${e.venueId?.name} · ${e.congregationName}`}
+                  subtitle={`${fmtDate(e.date)} · ${relativeDays(e.date)}`}
+                  onPress={() => router.push(`/events/${e._id}`)}
+                />
               </View>
             ))}
           </Card>

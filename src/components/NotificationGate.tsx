@@ -54,19 +54,14 @@ export function NotificationGate({ perm, asking, check }: { perm: PermissionChec
       </View>
       <View style={{ gap: space.sm, alignItems: 'center' }}>
         <Text style={styles.title}>Autoriser les notifications</Text>
-        <Text style={styles.text}>
-          L’application vous rappelle chaque appel à transmettre : 5 jours avant les travaux à 9 h, puis le suivi le lendemain. Sans notifications, ces rappels
-          ne peuvent pas vous parvenir.
-        </Text>
+        <Text style={styles.text}>Pour recevoir les rappels des missions.</Text>
       </View>
       <View style={{ gap: space.md, alignSelf: 'stretch' }}>
         {perm.canAskAgain ? (
           <Button title="Autoriser" icon="checkmark" onPress={() => check(true)} loading={asking} />
         ) : (
           <>
-            <Text style={[styles.text, { fontSize: 13 }]}>
-              Les notifications ont été refusées. Activez-les dans les réglages du téléphone, puis revenez ici.
-            </Text>
+            <Text style={[styles.text, { fontSize: 13 }]}>Activez-les dans les réglages du téléphone.</Text>
             <Button title="Ouvrir les réglages" icon="settings-outline" onPress={() => Linking.openSettings()} />
             <Button title="J’ai activé, vérifier" variant="ghost" onPress={() => check(false)} />
           </>

@@ -42,7 +42,7 @@ function Editor({ kind, setKind, initial }: { kind: 'post' | 'pre'; setKind: (k:
     onError: (e) => Alert.alert('Erreur', errorMessage(e)),
   });
 
-  const upd =(i: number, p: Partial<Question>) => setQuestions(questions.map((x, k) => (k === i ? { ...x, ...p } : x)));
+  const upd = (i: number, p: Partial<Question>) => setQuestions(questions.map((x, k) => (k === i ? { ...x, ...p } : x)));
   const move = (i: number, d: -1 | 1) => {
     const j = i + d;
     if (j < 0 || j >= questions.length) return;
@@ -54,9 +54,17 @@ function Editor({ kind, setKind, initial }: { kind: 'post' | 'pre'; setKind: (k:
 
   return (
     <Screen footer={<Button title="Enregistrer le questionnaire" onPress={() => save.mutate()} loading={save.isPending} />}>
-      <Segmented value={kind} onChange={setKind} options={[{ value: 'post', label: 'Après travaux' }, { value: 'pre', label: 'Avant travaux' }]} />
+      <Segmented
+        value={kind}
+        onChange={setKind}
+        options={[
+          { value: 'post', label: 'Après travaux' },
+          { value: 'pre', label: 'Avant travaux' },
+        ]}
+      />
       <Small>
-        Les questions « par tâche » sont répétées pour chaque tâche de l’intervention ({'{tache}'} est remplacé par son nom). Le champ du rapport indique la colonne du rapport mensuel alimentée par la réponse.
+        Les questions « par tâche » sont répétées pour chaque tâche de l’intervention ({'{tache}'} est remplacé par son nom). Le champ du rapport indique la
+        colonne du rapport mensuel alimentée par la réponse.
       </Small>
       {questions.map((x, i) => (
         <Card key={x._id ?? `n${i}`} style={x.active === false ? { opacity: 0.6 } : undefined}>
@@ -83,10 +91,25 @@ function Editor({ kind, setKind, initial }: { kind: 'post' | 'pre'; setKind: (k:
                 </View>
               </Section>
               {['multiple_choice', 'status_list'].includes(x.type) ? (
-                <Field label="Options (séparées par des virgules)" value={(x.options ?? []).join(', ')} onChangeText={(v) => upd(i, { options: v.split(',').map((s) => s.trim()).filter(Boolean) })} />
+                <Field
+                  label="Options (séparées par des virgules)"
+                  value={(x.options ?? []).join(', ')}
+                  onChangeText={(v) =>
+                    upd(i, {
+                      options: v
+                        .split(',')
+                        .map((s) => s.trim())
+                        .filter(Boolean),
+                    })
+                  }
+                />
               ) : null}
               <Field label="Catégorie" value={x.category ?? ''} onChangeText={(v) => upd(i, { category: v })} />
-              <Field label="Seulement pour les tâches de la catégorie (facultatif)" value={x.taskCategory ?? ''} onChangeText={(v) => upd(i, { taskCategory: v })} />
+              <Field
+                label="Seulement pour les tâches de la catégorie (facultatif)"
+                value={x.taskCategory ?? ''}
+                onChangeText={(v) => upd(i, { taskCategory: v })}
+              />
               <Section title="Champ du rapport mensuel">
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
                   <Chip label="Aucun" active={!x.reportField} onPress={() => upd(i, { reportField: '' })} />
@@ -102,7 +125,11 @@ function Editor({ kind, setKind, initial }: { kind: 'post' | 'pre'; setKind: (k:
               ].map((o) => (
                 <View key={o.k} style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
                   <Small style={{ color: colors.text }}>{o.label}</Small>
-                  <Switch value={o.k === 'active' ? x.active !== false : Boolean(x[o.k])} onValueChange={(v) => upd(i, { [o.k]: v })} trackColor={{ true: colors.primary }} />
+                  <Switch
+                    value={o.k === 'active' ? x.active !== false : Boolean(x[o.k])}
+                    onValueChange={(v) => upd(i, { [o.k]: v })}
+                    trackColor={{ true: colors.primary }}
+                  />
                 </View>
               ))}
               <View style={{ flexDirection: 'row', gap: space.sm }}>

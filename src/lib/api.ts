@@ -3,9 +3,7 @@ import { session } from './session';
 
 /** Adresse de l'API : EXPO_PUBLIC_API_URL ou app.json > extra.apiUrl. Aucune clé secrète côté mobile. */
 export const API_URL: string =
-  process.env.EXPO_PUBLIC_API_URL ||
-  (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl ||
-  'http://localhost:5000';
+  process.env.EXPO_PUBLIC_API_URL || (Constants.expoConfig?.extra as { apiUrl?: string } | undefined)?.apiUrl || 'http://localhost:5000';
 
 export class ApiError extends Error {
   constructor(

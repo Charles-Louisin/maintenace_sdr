@@ -2,12 +2,14 @@ import { useState, type ReactNode } from 'react';
 import { View } from 'react-native';
 import { Alert } from '../../lib/dialog';
 import { toast } from '../../components/toast';
+import { startUpload } from '../../lib/uploads';
 import * as DocumentPicker from 'expo-document-picker';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { api, get, patch, post, errorMessage } from '../../lib/api';
+import { get, patch, post, errorMessage } from '../../lib/api';
 import type { ReportTemplate } from '../../lib/types';
 import { Badge, Banner, Body, Button, Card, Chip, Empty, Field, H3, Loading, Screen, Section, Segmented, Small } from '../../components/ui';
 import { colors, space } from '../../theme/tokens';
+import { UploadButton } from '../../components/UploadButton';
 
 /**
  * Assistant de correspondance : chaque colonne du modèle Word est reliée aux données de l'application.
@@ -20,8 +22,11 @@ export default function ReportTemplateScreen() {
   const [picked, setSelectedId] = useState<string | null>(null);
   // Modèle affiché : celui choisi, sinon le modèle actif, sinon le plus récent
   const selectedId = picked ?? (list.data?.length ? (list.data.find((t) => t.active) ?? list.data[0])._id : null);
-  const tpl = useQuery({ queryKey: ['report-template', selectedId], queryFn: () => get<ReportTemplate>(`/api/report-templates/${selectedId}`), enabled: Boolean(selectedId) });
-  const [uploading, setUploading] = useState(false);
+  const tpl = useQuery({
+    queryKey: ['report-template', selectedId],
+    queryFn: () => get<ReportTemplate>(`/api/report-templates/${selectedId}`),
+    enabled: Boolean(selectedId),
+  });
 
   const refresh = () => {
     qc.invalidateQueries({ queryKey: ['report-templates'] });
@@ -31,22 +36,33 @@ export default function ReportTemplateScreen() {
   const activate = useMutation({ mutationFn: () => post(`/api/report-templates/${selectedId}/activate`), onSuccess: refresh });
 
   const upload = async () => {
-    const r = await DocumentPicker.getDocumentAsync({ type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document', copyToCacheDirectory: true });
+    const r = await DocumentPicker.getDocumentAsync({
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      copyToCacheDirectory: true,
+    });
     if (r.canceled) return;
-    setUploading(true);
     try {
       const form = new FormData();
       const a = r.assets[0];
       // Web : objet File fourni par le sélecteur ; téléphone : { uri, name, type }
       if (a.file) form.append('file', a.file, a.name);
-      else form.append('file', { uri: a.uri, name: a.name, type: a.mimeType ?? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' } as unknown as Blob);
-      const t = await api<ReportTemplate>('/api/report-templates/upload', { method: 'POST', form });
-      setSelectedId(t._id);
+      else
+        form.append('file', {
+          uri: a.uri,
+          name: a.name,
+          type: a.mimeType ?? 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        } as unknown as Blob);
+      const t = await startUpload<ReportTemplate>({
+        key: 'report-template',
+        label: 'Modèle de rapport',
+        path: '/api/report-templates/upload',
+        form,
+        successMessage: 'Modèle importé',
+      });
       refresh();
-    } catch (e) {
-      Alert.alert('Modèle refusé', errorMessage(e));
-    } finally {
-      setUploading(false);
+      if (t) setSelectedId(t._id);
+    } catch {
+      // erreur déjà signalée par un toast
     }
   };
 
@@ -57,10 +73,8 @@ export default function ReportTemplateScreen() {
     <>
       <Card>
         <H3>Modèle « Rapport de suivi »</H3>
-        <Body style={{ color: colors.textMuted }}>
-          Importez le fichier Word exemple. L’application remplit une COPIE de ce modèle chaque mois : styles, polices, bordures, en-têtes et mise en page sont conservés.
-        </Body>
-        <Button title="Importer un modèle (.docx)" icon="cloud-upload-outline" variant="secondary" onPress={upload} loading={uploading} />
+        <Body style={{ color: colors.textMuted }}>Une copie est remplie chaque mois, mise en page conservée.</Body>
+        <UploadButton uploadKey="report-template" title="Importer un modèle (.docx)" icon="cloud-upload-outline" onPress={() => void upload()} />
       </Card>
 
       {!list.data?.length ? <Empty icon="document-attach-outline" title="Aucun modèle importé" /> : null}
@@ -82,7 +96,17 @@ export default function ReportTemplateScreen() {
       </Screen>
     );
   }
-  return <MappingEditor key={`${t._id}-${tpl.dataUpdatedAt}`} t={t} header={header} sources={fields.data?.sources ?? []} onActivate={() => activate.mutate()} activating={activate.isPending} onSaved={refresh} />;
+  return (
+    <MappingEditor
+      key={`${t._id}-${tpl.dataUpdatedAt}`}
+      t={t}
+      header={header}
+      sources={fields.data?.sources ?? []}
+      onActivate={() => activate.mutate()}
+      activating={activate.isPending}
+      onSaved={refresh}
+    />
+  );
 }
 
 function MappingEditor({
@@ -113,12 +137,14 @@ function MappingEditor({
     onError: (e) => Alert.alert('Erreur', errorMessage(e)),
   });
   const toggle = (ci: number, key: string) =>
-    setColumns(columns.map((c) => (c.index === ci ? { ...c, sources: c.sources.includes(key) ? c.sources.filter((s) => s !== key) : [...c.sources, key] } : c)));
+    setColumns(
+      columns.map((c) => (c.index === ci ? { ...c, sources: c.sources.includes(key) ? c.sources.filter((s) => s !== key) : [...c.sources, key] } : c)),
+    );
 
   return (
     <Screen footer={<Button title="Enregistrer les correspondances" onPress={() => saveMapping.mutate()} loading={saveMapping.isPending} />}>
       {header}
-      {(
+      {
         <>
           <Card>
             <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
@@ -130,11 +156,22 @@ function MappingEditor({
             </Small>
             {!t.active ? <Button title="Utiliser ce modèle" compact onPress={onActivate} loading={activating} /> : null}
           </Card>
-          {!t.mappingConfirmedAt ? <Banner tone="info" title="Vérifiez les correspondances">Une proposition a été faite à partir des en-têtes du modèle. Ajustez-la puis enregistrez.</Banner> : null}
+          {!t.mappingConfirmedAt ? (
+            <Banner tone="info" title="Vérifiez les correspondances">
+              Ajustez puis enregistrez.
+            </Banner>
+          ) : null}
 
           <Section title="Organisation des lignes">
-            <Segmented value={rowMode} onChange={setRowMode} options={[{ value: 'per_event', label: 'Date × assemblée' }, { value: 'per_task', label: 'Par tâche' }, { value: 'per_venue', label: 'Par salle' }]} />
-            <Small>Par défaut : une rubrique par date de travaux et par assemblée, uniquement pour les comptes rendus reçus après travaux.</Small>
+            <Segmented
+              value={rowMode}
+              onChange={setRowMode}
+              options={[
+                { value: 'per_event', label: 'Date × assemblée' },
+                { value: 'per_task', label: 'Par tâche' },
+                { value: 'per_venue', label: 'Par salle' },
+              ]}
+            />
           </Section>
 
           <Section title="Colonnes du modèle">
@@ -157,7 +194,7 @@ function MappingEditor({
           <Field label="Titre (« {venues} » = salles du mois)" value={titleTemplate} onChangeText={setTitleTemplate} />
           <Field label="Texte pour une information absente" value={emptyValue} onChangeText={setEmptyValue} />
         </>
-      )}
+      }
     </Screen>
   );
 }

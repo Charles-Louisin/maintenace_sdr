@@ -10,7 +10,11 @@ import { Badge, Banner, Body, Button, Card, Chip, ErrorState, Field, H2, H3, Loa
 import { colors, radius, space } from '../../theme/tokens';
 import { toast } from '../../components/toast';
 
-const lines = (s: string) => s.split('\n').map((x) => x.trim()).filter(Boolean);
+const lines = (s: string) =>
+  s
+    .split('\n')
+    .map((x) => x.trim())
+    .filter(Boolean);
 
 export default function ResponseReview() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -51,8 +55,14 @@ function ReviewForm({ r }: { r: IncomingReport }) {
     qc.invalidateQueries({ queryKey: ['dashboard'] });
     qc.invalidateQueries({ queryKey: ['work-events'] });
   };
-  const save = useMutation({ mutationFn: () => patch(`/api/incoming-reports/${id}`, build()), onSuccess: invalidate, onError: (e) => Alert.alert('Erreur', errorMessage(e)) });
+  const save = useMutation({
+    meta: { success: 'Brouillon enregistré' },
+    mutationFn: () => patch(`/api/incoming-reports/${id}`, build()),
+    onSuccess: invalidate,
+    onError: (e) => Alert.alert('Erreur', errorMessage(e)),
+  });
   const validate = useMutation({
+    meta: { success: 'Réponse validée' },
     mutationFn: () => post(`/api/incoming-reports/${id}/validate`, build()),
     onSuccess: () => {
       invalidate();
@@ -88,7 +98,7 @@ function ReviewForm({ r }: { r: IncomingReport }) {
               loading={validate.isPending}
               onPress={() =>
                 missingCount
-                  ? Alert.alert('Réponses incomplètes', `${missingCount} réponse(s) restent « sans réponse » ou « à vérifier ». Elles ne seront jamais considérées comme positives.`, [
+                  ? Alert.alert('Réponses incomplètes', `${missingCount} réponse(s) sans réponse ou à vérifier.`, [
                       { text: 'Revoir', style: 'cancel' },
                       { text: 'Valider quand même', onPress: () => validate.mutate() },
                     ])
@@ -107,19 +117,30 @@ function ReviewForm({ r }: { r: IncomingReport }) {
         </View>
         <H2>{r.event ? `${r.event.venueName} · ${r.event.congregationName}` : 'Réponse'}</H2>
         {r.event ? <Small>Travaux du {fmtDate(r.event.date)}</Small> : null}
-        <Small>Reçu le {fmtDateTime(r.createdAt)}{typeof r.volunteerId === 'object' && r.volunteerId ? ` · transmis par ${r.volunteerId.fullName}` : ''}</Small>
+        <Small>
+          Reçu le {fmtDateTime(r.createdAt)}
+          {typeof r.volunteerId === 'object' && r.volunteerId ? ` · transmis par ${r.volunteerId.fullName}` : ''}
+        </Small>
       </View>
-      {r.aiError ? <Banner tone="warning" title="Analyse automatique indisponible">{r.aiError}</Banner> : null}
-      {!validated && r.aiModel ? (
-        <Banner tone="info" icon="sparkles-outline" title="Proposition de l’IA">
-          Vérifiez chaque réponse. Une réponse dont la citation n’a pas été retrouvée dans le message est marquée « À vérifier ».
+      {r.aiError ? (
+        <Banner tone="warning" title="Analyse automatique indisponible">
+          {r.aiError}
         </Banner>
       ) : null}
+      {!validated && r.aiModel ? <Banner tone="info" icon="sparkles-outline" title="Proposition de l’IA"></Banner> : null}
       {!validated && !r.aiModel ? (
         <Card>
           <H3>Remplir avec l’IA ?</H3>
-          <Small>Complétez les réponses vous-même, ou laissez l’IA les pré-remplir à partir du message (consomme des crédits OpenRouter).</Small>
-          <Button title="Analyser avec l’IA" icon="sparkles-outline" variant="secondary" compact onPress={() => analyze.mutate()} loading={analyze.isPending} style={{ alignSelf: 'flex-start' }} />
+
+          <Button
+            title="Analyser avec l’IA"
+            icon="sparkles-outline"
+            variant="secondary"
+            compact
+            onPress={() => analyze.mutate()}
+            loading={analyze.isPending}
+            style={{ alignSelf: 'flex-start' }}
+          />
         </Card>
       ) : null}
 
@@ -143,9 +164,26 @@ function ReviewForm({ r }: { r: IncomingReport }) {
             <Card>
               <H3>Appel préalable</H3>
               <Small>Responsable joint</Small>
-              <Segmented value={data.responsibleReached} onChange={(v) => !validated && setData({ ...data, responsibleReached: v })} options={[{ value: 'yes', label: 'Oui' }, { value: 'no', label: 'Non' }, { value: 'unknown', label: 'Inconnu' }]} />
+              <Segmented
+                value={data.responsibleReached}
+                onChange={(v) => !validated && setData({ ...data, responsibleReached: v })}
+                options={[
+                  { value: 'yes', label: 'Oui' },
+                  { value: 'no', label: 'Non' },
+                  { value: 'unknown', label: 'Inconnu' },
+                ]}
+              />
               <Small>Préparatifs</Small>
-              <Segmented value={data.preparationsDone} onChange={(v) => !validated && setData({ ...data, preparationsDone: v })} options={[{ value: 'yes', label: 'Prêts' }, { value: 'partial', label: 'En partie' }, { value: 'no', label: 'Non' }, { value: 'unknown', label: 'Inconnu' }]} />
+              <Segmented
+                value={data.preparationsDone}
+                onChange={(v) => !validated && setData({ ...data, preparationsDone: v })}
+                options={[
+                  { value: 'yes', label: 'Prêts' },
+                  { value: 'partial', label: 'En partie' },
+                  { value: 'no', label: 'Non' },
+                  { value: 'unknown', label: 'Inconnu' },
+                ]}
+              />
             </Card>
           ) : null}
 
@@ -174,7 +212,12 @@ function ReviewForm({ r }: { r: IncomingReport }) {
                   {!validated ? (
                     <View style={{ flexDirection: 'row', gap: space.sm, flexWrap: 'wrap' }}>
                       {(['answered', 'to_verify', 'missing'] as const).map((st) => (
-                        <Chip key={st} label={ANSWER_STATUS[st].label} active={a.status === st} onPress={() => setAnswer(i, { status: st, ...(st === 'missing' ? { value: '' } : {}) })} />
+                        <Chip
+                          key={st}
+                          label={ANSWER_STATUS[st].label}
+                          active={a.status === st}
+                          onPress={() => setAnswer(i, { status: st, ...(st === 'missing' ? { value: '' } : {}) })}
+                        />
                       ))}
                     </View>
                   ) : null}
@@ -202,8 +245,22 @@ function ReviewForm({ r }: { r: IncomingReport }) {
           <Field label="Problèmes signalés (un par ligne)" value={issues} onChangeText={setIssues} multiline editable={!validated} />
           <Field label="Solutions apportées ou prévues (une par ligne)" value={solutions} onChangeText={setSolutions} multiline editable={!validated} />
           <Field label="Recommandations (une par ligne)" value={recos} onChangeText={setRecos} multiline editable={!validated} />
-          <Field label="Dépenses (« libellé : montant », une par ligne)" value={expenses} onChangeText={setExpenses} multiline editable={!validated} hint="Montants en FCFA. « ? » si le montant n’a pas été communiqué." />
-          {r.type === 'pre' ? <Field label="Disponibilités évoquées" value={data.availability} onChangeText={(v) => setData({ ...data, availability: v })} editable={!validated} /> : null}
+          <Field
+            label="Dépenses (« libellé : montant », une par ligne)"
+            value={expenses}
+            onChangeText={setExpenses}
+            multiline
+            editable={!validated}
+            hint="Montants en FCFA. « ? » si le montant n’a pas été communiqué."
+          />
+          {r.type === 'pre' ? (
+            <Field
+              label="Disponibilités évoquées"
+              value={data.availability}
+              onChangeText={(v) => setData({ ...data, availability: v })}
+              editable={!validated}
+            />
+          ) : null}
           <Field label="Autres informations" value={data.otherInfo} onChangeText={(v) => setData({ ...data, otherInfo: v })} multiline editable={!validated} />
         </>
       ) : null}

@@ -12,7 +12,11 @@ const schema = z
   .object({
     email: z.email('Adresse e-mail invalide'),
     recoveryCode: z.string().min(10, 'Code de récupération requis'),
-    newPassword: z.string().min(10, '10 caractères minimum').regex(/[a-zA-Z]/, 'Ajoutez des lettres').regex(/\d/, 'Ajoutez des chiffres'),
+    newPassword: z
+      .string()
+      .min(10, '10 caractères minimum')
+      .regex(/[a-zA-Z]/, 'Ajoutez des lettres')
+      .regex(/\d/, 'Ajoutez des chiffres'),
     confirm: z.string(),
   })
   .refine((v) => v.newPassword === v.confirm, { path: ['confirm'], message: 'Les mots de passe ne correspondent pas' });
@@ -47,7 +51,7 @@ export default function ForgotPassword() {
     return (
       <Screen>
         <Banner tone="success" icon="checkmark-circle" title="Mot de passe modifié">
-          Toutes les sessions ont été fermées. Notez votre NOUVEAU code de récupération : l’ancien n’est plus valable.
+          Notez votre NOUVEAU code de récupération.
         </Banner>
         <Card>
           <H3 style={{ fontFamily: 'monospace', letterSpacing: 1, textAlign: 'center' }}>{newCode}</H3>
@@ -70,13 +74,19 @@ export default function ForgotPassword() {
       <Body style={{ color: colors.textMuted }}>
         Saisissez le code de récupération qui vous a été remis lors de la création du compte (format XXXXX-XXXXX-XXXXX-XXXXX).
       </Body>
-      {error ? <Banner tone="danger" title="Échec">{error}</Banner> : null}
+      {error ? (
+        <Banner tone="danger" title="Échec">
+          {error}
+        </Banner>
+      ) : null}
       {fields.map((f) => (
         <Controller
           key={f.name}
           control={control}
           name={f.name}
-          render={({ field }) => <Field label={f.label} value={field.value} onChangeText={field.onChange} error={formState.errors[f.name]?.message} {...f.props} />}
+          render={({ field }) => (
+            <Field label={f.label} value={field.value} onChangeText={field.onChange} error={formState.errors[f.name]?.message} {...f.props} />
+          )}
         />
       ))}
       <Button title="Réinitialiser" onPress={submit} loading={formState.isSubmitting} />

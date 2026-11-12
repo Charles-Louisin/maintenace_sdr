@@ -9,6 +9,8 @@ import * as SecureStore from 'expo-secure-store';
  */
 const ENABLED = 'sdr.biometric.enabled';
 const ASKED = 'sdr.biometric.asked';
+/** Clé de connexion de ce téléphone ({ keyId, secret }), conservée après la déconnexion. */
+const KEY = 'sdr.biometric.key';
 
 export async function biometricAvailable(): Promise<boolean> {
   if (Platform.OS === 'web') return false;
@@ -30,6 +32,25 @@ export async function setBiometricEnabled(on: boolean) {
   else await SecureStore.deleteItemAsync(ENABLED);
 }
 
+export interface BiometricKey {
+  keyId: string;
+  secret: string;
+}
+export async function getBiometricKey(): Promise<BiometricKey | null> {
+  if (Platform.OS === 'web') return null;
+  try {
+    const raw = await SecureStore.getItemAsync(KEY);
+    return raw ? (JSON.parse(raw) as BiometricKey) : null;
+  } catch {
+    return null;
+  }
+}
+export async function saveBiometricKey(k: BiometricKey | null) {
+  if (Platform.OS === 'web') return;
+  if (k) await SecureStore.setItemAsync(KEY, JSON.stringify(k));
+  else await SecureStore.deleteItemAsync(KEY);
+}
+
 export async function wasAsked(): Promise<boolean> {
   if (Platform.OS === 'web') return true;
   return (await SecureStore.getItemAsync(ASKED)) === '1';
@@ -43,7 +64,8 @@ export async function biometricLabel(): Promise<string> {
   if (Platform.OS === 'web') return 'empreinte';
   try {
     const types = await LocalAuthentication.supportedAuthenticationTypesAsync();
-    if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION) && !types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT)) return 'Face ID';
+    if (types.includes(LocalAuthentication.AuthenticationType.FACIAL_RECOGNITION) && !types.includes(LocalAuthentication.AuthenticationType.FINGERPRINT))
+      return 'Face ID';
   } catch {
     /* empreinte par défaut */
   }

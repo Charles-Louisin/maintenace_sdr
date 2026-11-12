@@ -17,15 +17,24 @@ export interface Venue {
   address: string;
   notes: string;
   congregations: Congregation[];
+  /** Photo de la salle (lien signé) */
+  imageUrl?: string | null;
+  /** Programmes donnés « semaine du » */
+  weeklySchedule?: boolean;
   eventCount?: number;
 }
 export interface Contact {
   _id: string;
   fullName: string;
   phones: string[];
+  /** Responsable de toute la salle (toutes ses assemblées) */
+  venueIds: string[];
+  /** Responsable d’assemblées précises */
+  congregationIds?: string[];
+  /** Numéros (parmi phones) joignables sur WhatsApp */
+  whatsappPhones?: string[];
   role: string;
   notes: string;
-  venueIds: string[];
   callLog?: { at: string; summary: string; workEventId?: string }[];
 }
 export interface Volunteer {
@@ -87,8 +96,10 @@ export interface WorkEvent {
   endTime: string | null;
   status: 'scheduled' | 'done' | 'cancelled';
   tasks: EventTask[];
-  responsibleContactId: { _id: string; fullName: string; phones: string[]; role?: string } | null;
+  responsibleContactId: { _id: string; fullName: string; phones: string[]; role?: string; whatsappPhones?: string[] } | null;
   postCallTimingOverride: 'next_morning' | 'same_evening' | null;
+  /** Salle à la semaine : jour des travaux donné par le responsable */
+  plannedDay?: string | null;
   calls: CallSummary[];
   history?: { at: string; action: string; details?: unknown }[];
   reports?: IncomingReport[];
@@ -116,6 +127,13 @@ export interface CallAssignment {
   message: { text: string; edited: boolean; versions?: { text: string; at: string; source: string }[] };
   questions: { questionId: string; label: string; reportField: string; taskLabel: string }[];
   sentConfirmedAt: string | null;
+  /** Envois confirmés, un par volontaire contacté */
+  sends?: { at: string; volunteerId: string; volunteerName: string }[];
+  completedAt?: string | null;
+  completionNote?: string;
+  completionOutcome?: 'done' | 'not_done' | null;
+  /** Rappels prévus ou envoyés pour cette mission (échéance, puis retard chaque jour) */
+  reminders?: { _id: string; kind: string; dueAt: string; status: string; deliveryStatus?: string }[];
   whatsappOpenedAt: string | null;
   event?: WorkEvent;
   whatsappUrl?: string | null;
@@ -170,7 +188,15 @@ export interface Proposal {
   date: string | null;
   startTime: string | null;
   endTime: string | null;
-  tasks: { _id: string; label: string; category: string; description: string; catalogRef: string; catalogEntryId: string | null; catalogProposalId: string | null }[];
+  tasks: {
+    _id: string;
+    label: string;
+    category: string;
+    description: string;
+    catalogRef: string;
+    catalogEntryId: string | null;
+    catalogProposalId: string | null;
+  }[];
   responsible: {
     name: string;
     phone: string | null;
@@ -319,7 +345,14 @@ export interface MonthlyReport {
   createdAt: string;
 }
 export interface Dashboard {
-  upcoming: { _id: string; date: string; congregationName: string; venueId: { name: string }; tasks: { label: string }[] }[];
+  upcoming: {
+    _id: string;
+    date: string;
+    plannedDay?: string | null;
+    congregationName: string;
+    venueId: { _id: string; name: string };
+    tasks: { label: string }[];
+  }[];
   counts: {
     venues: number;
     scheduledEvents: number;

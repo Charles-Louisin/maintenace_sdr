@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { TextInput, View } from 'react-native';
+import { toast } from '../../components/toast';
 import { Alert } from '../../lib/dialog';
 import { router, useLocalSearchParams } from 'expo-router';
 import * as Clipboard from 'expo-clipboard';
@@ -8,7 +9,7 @@ import { ApiError, api, get, errorMessage } from '../../lib/api';
 import type { CallAssignment, IncomingReport, WorkEvent } from '../../lib/types';
 import { fmtDate } from '../../lib/format';
 import { listDrafts, newDraftId, removeDraft, saveDraft } from '../../lib/drafts';
-import { Banner, Body, Button, Card, Chip, H3, Loading, Screen, Section, Segmented, Small } from '../../components/ui';
+import { Banner, Button, Card, Chip, H3, Loading, Screen, Section, Segmented, Small } from '../../components/ui';
 import { colors, radius, space } from '../../theme/tokens';
 
 interface Candidate {
@@ -29,7 +30,10 @@ export default function NewResponse() {
   const [candidates, setCandidates] = useState<Candidate[] | null>(null);
   const draftId = useRef(params.draft ?? newDraftId());
 
-  const missions = useQuery({ queryKey: ['missions', 'awaiting_response'], queryFn: () => get<CallAssignment[]>('/api/call-assignments?scope=awaiting_response') });
+  const missions = useQuery({
+    queryKey: ['missions', 'awaiting_response'],
+    queryFn: () => get<CallAssignment[]>('/api/call-assignments?scope=awaiting_response'),
+  });
   const preset = useQuery({
     queryKey: ['mission', assignmentId],
     queryFn: () => get<CallAssignment>(`/api/call-assignments/${assignmentId}`),
@@ -67,12 +71,13 @@ export default function NewResponse() {
       });
       await removeDraft(draftId.current);
       qc.invalidateQueries({ queryKey: ['incoming-reports'] });
+      toast.success('Réponse enregistrée');
       router.replace(`/responses/${r.report._id}`);
     } catch (e) {
       if (e instanceof ApiError && e.code === 'EVENT_AMBIGUOUS') {
         setCandidates((e.payload?.candidates as Candidate[]) ?? []);
       } else if (e instanceof ApiError && e.isNetwork) {
-        setInfo('Hors connexion : le message est conservé sur le téléphone et sera envoyé au retour de la connexion.');
+        setInfo('Hors connexion : envoyé au retour du réseau.');
       } else {
         Alert.alert('Analyse impossible', errorMessage(e));
       }
@@ -95,11 +100,22 @@ export default function NewResponse() {
       footer={
         <>
           <Button title="Enregistrer la réponse" icon="checkmark" onPress={() => analyze()} loading={busy} />
-          <Button title="Garder en brouillon" variant="ghost" onPress={async () => { await keepDraft(); router.back(); }} />
+          <Button
+            title="Garder en brouillon"
+            variant="ghost"
+            onPress={async () => {
+              await keepDraft();
+              router.back();
+            }}
+          />
         </>
       }
     >
-      {info ? <Banner tone="info" icon="cloud-offline-outline" title="Brouillon enregistré">{info}</Banner> : null}
+      {info ? (
+        <Banner tone="info" icon="cloud-offline-outline" title="Brouillon enregistré">
+          {info}
+        </Banner>
+      ) : null}
 
       <Section title="Type de réponse">
         <Segmented
@@ -120,7 +136,8 @@ export default function NewResponse() {
           <Card>
             <H3>{label}</H3>
             <Small>
-              {preset.data.type === 'pre' ? 'Appel préalable' : 'Appel de suivi'} · {fmtDate(preset.data.event!.date)} · {preset.data.volunteerId?.fullName ?? '—'}
+              {preset.data.type === 'pre' ? 'Appel préalable' : 'Appel de suivi'} · {fmtDate(preset.data.event!.date)} ·{' '}
+              {preset.data.volunteerId?.fullName ?? '—'}
             </Small>
             <Button title="Changer" variant="ghost" compact onPress={() => setAssignmentId(null)} style={{ alignSelf: 'flex-start' }} />
           </Card>
@@ -133,11 +150,16 @@ export default function NewResponse() {
               .map((m) => {
                 const e = m.workEventId as WorkEvent;
                 return (
-                  <Chip key={m._id} label={`${e.venueId?.name} · ${e.congregationName} · ${fmtDate(e.date, { weekday: false })} (${m.volunteerId?.fullName ?? '—'})`} onPress={() => setAssignmentId(m._id)} />
+                  <Chip
+                    key={m._id}
+                    label={`${e.venueId?.name} · ${e.congregationName} · ${fmtDate(e.date, { weekday: false })} (${m.volunteerId?.fullName ?? '—'})`}
+                    onPress={() => setAssignmentId(m._id)}
+                  />
                 );
               })}
             <Small>
-              Sans sélection, l’intervention est reconnue d’après le nom de la salle ou de l’assemblée cité dans le message ; en cas de doute, vous la choisirez.
+              Sans sélection, l’intervention est reconnue d’après le nom de la salle ou de l’assemblée cité dans le message ; en cas de doute, vous la
+              choisirez.
             </Small>
           </View>
         )}
@@ -147,14 +169,19 @@ export default function NewResponse() {
         <Section title="Quelle intervention ?">
           {candidates.map((c) => (
             <Card key={c.id} onPress={() => pickCandidate(c)}>
-              <H3>{c.venueName} · {c.congregationName}</H3>
+              <H3>
+                {c.venueName} · {c.congregationName}
+              </H3>
               <Small>{fmtDate(c.date)}</Small>
             </Card>
           ))}
         </Section>
       ) : null}
 
-      <Section title="Message reçu sur WhatsApp" action={<Button title="Coller" icon="clipboard-outline" variant="ghost" compact onPress={async () => setText(await Clipboard.getStringAsync())} />}>
+      <Section
+        title="Message reçu sur WhatsApp"
+        action={<Button title="Coller" icon="clipboard-outline" variant="ghost" compact onPress={async () => setText(await Clipboard.getStringAsync())} />}
+      >
         <TextInput
           value={text}
           onChangeText={setText}
@@ -162,9 +189,19 @@ export default function NewResponse() {
           multiline
           placeholder="Collez ici le texte reçu du volontaire…"
           placeholderTextColor={colors.textFaint}
-          style={{ minHeight: 240, backgroundColor: colors.surface, borderRadius: radius.md, borderWidth: 1, borderColor: colors.border, padding: space.md, fontSize: 15, lineHeight: 21, color: colors.text, textAlignVertical: 'top' }}
+          style={{
+            minHeight: 240,
+            backgroundColor: colors.surface,
+            borderRadius: radius.md,
+            borderWidth: 1,
+            borderColor: colors.border,
+            padding: space.md,
+            fontSize: 15,
+            lineHeight: 21,
+            color: colors.text,
+            textAlignVertical: 'top',
+          }}
         />
-        <Body style={{ color: colors.textMuted, fontSize: 13 }}>Le message original est conservé tel quel ; il devient un brouillon que vous compléterez (vous-même ou avec l’IA) puis validerez.</Body>
       </Section>
     </Screen>
   );

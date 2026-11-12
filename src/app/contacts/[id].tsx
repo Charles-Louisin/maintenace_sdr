@@ -1,13 +1,15 @@
 import { useState } from 'react';
-import { Linking } from 'react-native';
+import { View } from 'react-native';
+import { ContactActions } from '../../components/ContactActions';
 import { Alert } from '../../lib/dialog';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { del, get, patch, post, errorMessage } from '../../lib/api';
-import type { Contact, WorkEvent } from '../../lib/types';
-import { fmtDate, fmtDateTime } from '../../lib/format';
-import { Button, Card, Field, Loading, Row, Screen, Section, Small } from '../../components/ui';
-import { space } from '../../theme/tokens';
+import type { Contact, Venue, WorkEvent } from '../../lib/types';
+import { CongregationPicker, assignmentSummary, type Assignment } from '../../components/CongregationPicker';
+import { fmtDate, fmtDateTime, fmtPhone } from '../../lib/format';
+import { Button, Card, Chip, Field, IconButton, Loading, Row, Screen, Section, Small, WaToggle } from '../../components/ui';
+import { colors, space } from '../../theme/tokens';
 
 type Detail = Contact & { events: WorkEvent[] };
 
@@ -23,13 +25,28 @@ function ContactForm({ id, c }: { id: string; c?: Detail }) {
   const isNew = id === 'new';
   const qc = useQueryClient();
   const [fullName, setFullName] = useState(c?.fullName ?? '');
-  const [phones, setPhones] = useState(c?.phones.join(' / ') ?? '');
+  const [numbers, setNumbers] = useState<{ value: string; wa: boolean }[]>(
+    c?.phones.length ? c.phones.map((p) => ({ value: fmtPhone(p), wa: Boolean(c.whatsappPhones?.includes(p)) })) : [{ value: '', wa: false }],
+  );
+  const setNumber = (i: number, patchN: Partial<{ value: string; wa: boolean }>) => setNumbers(numbers.map((n, k) => (k === i ? { ...n, ...patchN } : n)));
+  const filled = numbers.filter((n) => n.value.trim());
+  const venues = useQuery({ queryKey: ['venues'], queryFn: () => get<Venue[]>('/api/venues') });
+  const [assign, setAssign] = useState<Assignment>({ venueIds: (c?.venueIds ?? []).map(String), congregationIds: (c?.congregationIds ?? []).map(String) });
   const [role, setRole] = useState(c?.role ?? 'Coordinateur de nettoyage');
   const [notes, setNotes] = useState(c?.notes ?? '');
 
   const save = useMutation({
+    meta: { success: 'Fiche enregistrée' },
     mutationFn: () => {
-      const body = { fullName, phones: phones.split(/[\/,;]/).map((s) => s.trim()).filter(Boolean), role, notes };
+      const body = {
+        fullName,
+        phones: filled.map((n) => n.value.trim()),
+        whatsappPhones: filled.filter((n) => n.wa).map((n) => n.value.trim()),
+        venueIds: assign.venueIds,
+        congregationIds: assign.congregationIds,
+        role,
+        notes,
+      };
       return isNew ? post('/api/contacts', body) : patch(`/api/contacts/${id}`, body);
     },
     onSuccess: () => {
@@ -41,6 +58,7 @@ function ContactForm({ id, c }: { id: string; c?: Detail }) {
     onError: (e) => Alert.alert('Enregistrement impossible', errorMessage(e)),
   });
   const remove = useMutation({
+    meta: { success: 'Responsable supprimé' },
     mutationFn: () => del(`/api/contacts/${id}`),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['contacts'] });
@@ -52,17 +70,57 @@ function ContactForm({ id, c }: { id: string; c?: Detail }) {
   return (
     <Screen footer={<Button title="Enregistrer" onPress={() => save.mutate()} loading={save.isPending} disabled={fullName.trim().length < 2} />}>
       <Field label="Nom et prénom" value={fullName} onChangeText={setFullName} />
-      <Field label="Téléphone(s)" value={phones} onChangeText={setPhones} keyboardType="phone-pad" hint="Plusieurs numéros séparés par « / ». Les messages de mission reprendront ce numéro." />
+      <Section title="Numéros">
+        {numbers.map((n, i) => (
+          <View key={i} style={{ flexDirection: 'row', alignItems: 'center', gap: space.sm }}>
+            <View style={{ flex: 1 }}>
+              <Field
+                label=""
+                value={n.value}
+                onChangeText={(value) => setNumber(i, { value })}
+                keyboardType="phone-pad"
+                placeholder={`Numéro ${i + 1}`}
+                accessibilityLabel={`Numéro ${i + 1}`}
+              />
+            </View>
+            <WaToggle on={n.wa} onToggle={() => setNumber(i, { wa: !n.wa })} />
+            {numbers.length > 1 ? (
+              <IconButton icon="close" label={`Retirer le numéro ${i + 1}`} size={36} onPress={() => setNumbers(numbers.filter((_, k) => k !== i))} />
+            ) : null}
+          </View>
+        ))}
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: space.sm }}>
+          {numbers.length < 3 ? <Chip label="+ Ajouter un numéro" onPress={() => setNumbers([...numbers, { value: '', wa: false }])} /> : null}
+          {numbers.length > 1 ? (
+            <>
+              <Chip label="Tous sur WhatsApp" active={numbers.every((x) => x.wa)} onPress={() => setNumbers(numbers.map((x) => ({ ...x, wa: true })))} />
+              <Chip label="Aucun sur WhatsApp" active={numbers.every((x) => !x.wa)} onPress={() => setNumbers(numbers.map((x) => ({ ...x, wa: false })))} />
+            </>
+          ) : null}
+        </View>
+      </Section>
+      <Section title="Assemblées">
+        {assignmentSummary(venues.data ?? [], assign) ? (
+          <Small style={{ color: colors.text }}>Responsable de : {assignmentSummary(venues.data ?? [], assign)}</Small>
+        ) : null}
+        <CongregationPicker venues={venues.data ?? []} value={assign} onChange={setAssign} />
+      </Section>
       <Field label="Fonction" value={role} onChangeText={setRole} />
       <Field label="Notes" value={notes} onChangeText={setNotes} multiline />
-      {c?.phones[0] ? <Button title="Appeler" icon="call-outline" variant="secondary" onPress={() => Linking.openURL(`tel:+${c.phones[0]}`)} /> : null}
+      <ContactActions contact={c} />
       {c ? (
         <>
           <Section title={`Interventions (${c.events.length})`}>
             <Card style={{ paddingVertical: space.xs }}>
               {c.events.length === 0 ? <Small>Aucune intervention.</Small> : null}
               {c.events.map((e) => (
-                <Row key={e._id} icon="calendar-outline" title={`${e.congregationName}`} subtitle={fmtDate(e.date)} onPress={() => router.push(`/events/${e._id}`)} />
+                <Row
+                  key={e._id}
+                  icon="calendar-outline"
+                  title={`${e.congregationName}`}
+                  subtitle={fmtDate(e.date)}
+                  onPress={() => router.push(`/events/${e._id}`)}
+                />
               ))}
             </Card>
           </Section>

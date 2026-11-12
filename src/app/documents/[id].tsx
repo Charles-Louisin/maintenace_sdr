@@ -19,6 +19,7 @@ const MATCH: Record<string, { label: string; tone: 'success' | 'info' | 'warning
 
 function ProposalCard({ p, batchId, exId, onChange, locked }: { p: Proposal; batchId: string; exId: string; onChange: () => void; locked: boolean }) {
   const decide = useMutation({
+    meta: { success: 'Choix enregistré' },
     mutationFn: (decision: 'pending' | 'rejected') => patch(`/api/extractions/${exId}/proposals/${p._id}`, { decision }),
     onSuccess: onChange,
   });
@@ -62,8 +63,22 @@ function ProposalCard({ p, batchId, exId, onChange, locked }: { p: Proposal; bat
       </Small>
       {!accepted && !locked ? (
         <View style={{ flexDirection: 'row', gap: space.sm, marginTop: 4 }}>
-          {!rejected ? <Button title="Corriger" icon="create-outline" variant="secondary" compact onPress={() => router.push(`/documents/proposal?batch=${batchId}&ex=${exId}&pid=${p._id}`)} /> : null}
-          <Button title={rejected ? 'Rétablir' : 'Écarter'} variant="ghost" compact onPress={() => decide.mutate(rejected ? 'pending' : 'rejected')} loading={decide.isPending} />
+          {!rejected ? (
+            <Button
+              title="Corriger"
+              icon="create-outline"
+              variant="secondary"
+              compact
+              onPress={() => router.push(`/documents/proposal?batch=${batchId}&ex=${exId}&pid=${p._id}`)}
+            />
+          ) : null}
+          <Button
+            title={rejected ? 'Rétablir' : 'Écarter'}
+            variant="ghost"
+            compact
+            onPress={() => decide.mutate(rejected ? 'pending' : 'rejected')}
+            loading={decide.isPending}
+          />
         </View>
       ) : null}
     </Card>
@@ -86,7 +101,9 @@ export default function BatchReview() {
   };
   // Le serveur valide en arrière-plan (202) ; la progression est suivie via l'importation
   const validate = useMutation({
-    mutationFn: (ids?: string[]) => post<{ started: boolean; total: number }>(`/api/extractions/${q.data!.extraction!._id}/validate`, ids ? { proposalIds: ids } : {}),
+    meta: { success: 'Validation lancée' },
+    mutationFn: (ids?: string[]) =>
+      post<{ started: boolean; total: number }>(`/api/extractions/${q.data!.extraction!._id}/validate`, ids ? { proposalIds: ids } : {}),
     onSuccess: refresh,
     onError: (e) => Alert.alert('Validation impossible', errorMessage(e)),
   });
@@ -108,14 +125,21 @@ export default function BatchReview() {
       qc.invalidateQueries({ queryKey: ['dashboard'] });
     }
   }
-  const reanalyze = useMutation({ mutationFn: () => post(`/api/documents/batches/${id}/analyze`), onSuccess: refresh });
+  const reanalyze = useMutation({
+    meta: { success: 'Nouvelle analyse lancée' },
+    mutationFn: () => post(`/api/documents/batches/${id}/analyze`),
+    onSuccess: refresh,
+  });
   const useAsTemplate = useMutation({
+    meta: { success: 'Modèle de rapport enregistré' },
     mutationFn: (docId: string) => post<{ _id: string }>(`/api/report-templates/from-document/${docId}`),
     onSuccess: () => router.push('/settings/report-template'),
     onError: (e) => Alert.alert('Modèle refusé', errorMessage(e)),
   });
   const catalogDecide = useMutation({
-    mutationFn: ({ cid, decision }: { cid: string; decision: 'pending' | 'rejected' }) => patch(`/api/extractions/${q.data!.extraction!._id}/catalog/${cid}`, { decision }),
+    meta: { success: 'Choix enregistré' },
+    mutationFn: ({ cid, decision }: { cid: string; decision: 'pending' | 'rejected' }) =>
+      patch(`/api/extractions/${q.data!.extraction!._id}/catalog/${cid}`, { decision }),
     onSuccess: refresh,
   });
 
@@ -148,8 +172,18 @@ export default function BatchReview() {
       footer={
         ex && ex.status !== 'validated' && pending.length && !running ? (
           <>
-            {blocking.length ? <Small style={{ color: colors.warning }}>{blocking.length} intervention(s) à corriger avant validation (date, tâches ou responsable à confirmer).</Small> : null}
-            <Button title={`Valider ${pending.length - blocking.length} intervention(s)`} icon="checkmark-done" onPress={() => validate.mutate(pending.filter((p) => !blocking.includes(p)).map((p) => p._id))} loading={validate.isPending} disabled={pending.length === blocking.length} />
+            {blocking.length ? (
+              <Small style={{ color: colors.warning }}>
+                {blocking.length} intervention(s) à corriger avant validation (date, tâches ou responsable à confirmer).
+              </Small>
+            ) : null}
+            <Button
+              title={`Valider ${pending.length - blocking.length} intervention(s)`}
+              icon="checkmark-done"
+              onPress={() => validate.mutate(pending.filter((p) => !blocking.includes(p)).map((p) => p._id))}
+              loading={validate.isPending}
+              disabled={pending.length === blocking.length}
+            />
           </>
         ) : undefined
       }
@@ -168,7 +202,20 @@ export default function BatchReview() {
         </Card>
       ) : null}
       {b.status === 'failed' ? (
-        <Banner tone="danger" title="Analyse échouée" action={<Button title="Relancer l’analyse" compact variant="secondary" onPress={() => reanalyze.mutate()} style={{ alignSelf: 'flex-start', marginTop: 6 }} />}>
+        <Banner
+          tone="danger"
+          title="Analyse échouée"
+          action={
+            <Button
+              title="Relancer l’analyse"
+              compact
+              variant="secondary"
+              onPress={() => reanalyze.mutate()}
+              loading={reanalyze.isPending}
+              style={{ alignSelf: 'flex-start', marginTop: 6 }}
+            />
+          }
+        >
           {b.error}
         </Banner>
       ) : null}
@@ -180,10 +227,14 @@ export default function BatchReview() {
           <View style={{ height: 6, borderRadius: 3, backgroundColor: colors.surfaceAlt, overflow: 'hidden' }}>
             <View style={{ width: `${v?.total ? Math.round(((v.done ?? 0) / v.total) * 100) : 0}%`, height: 6, backgroundColor: colors.primary }} />
           </View>
-          <Small>Création des interventions, des missions et des rappels. Vous pouvez quitter cet écran : la validation continue sur le serveur. Les modifications sont verrouillées jusqu’à la fin.</Small>
+          <Small>Vous pouvez quitter cet écran.</Small>
         </Card>
       ) : null}
-      {v?.error ? <Banner tone="danger" title="Validation interrompue">{v.error}</Banner> : null}
+      {v?.error ? (
+        <Banner tone="danger" title="Validation interrompue">
+          {v.error}
+        </Banner>
+      ) : null}
       {results ? (
         <Banner tone={ko.length ? 'warning' : 'success'} icon="checkmark-circle" title="Validation effectuée">
           {`${ok} intervention(s) ajoutée(s) ou mise(s) à jour au planning.${ko.length ? `\n${ko.length} à corriger :\n- ${ko.map((x) => x.error).join('\n- ')}` : ''}`}
@@ -196,14 +247,31 @@ export default function BatchReview() {
             const info = ex?.documents.find((x) => String(x.documentId) === d._id);
             return (
               <View key={d._id}>
-                <Row icon="document-outline" title={d.originalName} subtitle={`${DOC_KIND[d.kind] ?? d.kind}${info ? ` · ${info.summary}` : ''}${d.error ? ` · ${d.error}` : ''}`} onPress={() => openDoc(d._id)} />
-                {d.kind === 'report_template' ? <Button title="Utiliser comme modèle de rapport" compact variant="secondary" onPress={() => useAsTemplate.mutate(d._id)} loading={useAsTemplate.isPending} /> : null}
+                <Row
+                  icon="document-outline"
+                  title={d.originalName}
+                  subtitle={`${DOC_KIND[d.kind] ?? d.kind}${info ? ` · ${info.summary}` : ''}${d.error ? ` · ${d.error}` : ''}`}
+                  onPress={() => openDoc(d._id)}
+                />
+                {d.kind === 'report_template' ? (
+                  <Button
+                    title="Utiliser comme modèle de rapport"
+                    compact
+                    variant="secondary"
+                    onPress={() => useAsTemplate.mutate(d._id)}
+                    loading={useAsTemplate.isPending && useAsTemplate.variables === d._id}
+                  />
+                ) : null}
               </View>
             );
           })}
         </Card>
       </Section>
-      {ex?.warnings.length ? <Banner tone="warning" title="Avertissements">{ex.warnings.join('\n')}</Banner> : null}
+      {ex?.warnings.length ? (
+        <Banner tone="warning" title="Avertissements">
+          {ex.warnings.join('\n')}
+        </Banner>
+      ) : null}
 
       {ex?.catalogProposals.length ? (
         <Section title={`Fiches des tâches (${ex.catalogProposals.length})`}>
@@ -215,9 +283,18 @@ export default function BatchReview() {
               </View>
               <Small>{[c.category, c.frequency].filter(Boolean).join(' · ')}</Small>
               {c.materials.length ? <Small>Matériel : {c.materials.join(', ')}</Small> : null}
-              <Small>{c.steps.length} étape(s){c.existingEntryId ? ' · mettra à jour la fiche existante' : ''}</Small>
+              <Small>
+                {c.steps.length} étape(s){c.existingEntryId ? ' · mettra à jour la fiche existante' : ''}
+              </Small>
               {running ? null : c.decision !== 'accepted' ? (
-                <Button title={c.decision === 'rejected' ? 'Rétablir' : 'Écarter'} variant="ghost" compact onPress={() => catalogDecide.mutate({ cid: c._id, decision: c.decision === 'rejected' ? 'pending' : 'rejected' })} style={{ alignSelf: 'flex-start' }} />
+                <Button
+                  title={c.decision === 'rejected' ? 'Rétablir' : 'Écarter'}
+                  variant="ghost"
+                  compact
+                  onPress={() => catalogDecide.mutate({ cid: c._id, decision: c.decision === 'rejected' ? 'pending' : 'rejected' })}
+                  loading={catalogDecide.isPending && catalogDecide.variables?.cid === c._id}
+                  style={{ alignSelf: 'flex-start' }}
+                />
               ) : (
                 <Badge label="Enregistrée" tone="success" />
               )}

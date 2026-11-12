@@ -30,10 +30,17 @@ function TemplatesForm({ s }: { s: Settings }) {
   });
   return (
     <Screen footer={<Button title="Enregistrer" onPress={() => save.mutate()} loading={save.isPending} />}>
-      <Segmented value={kind} onChange={setKind} options={[{ value: 'pre', label: 'Avant travaux' }, { value: 'post', label: 'Après travaux' }]} />
+      <Segmented
+        value={kind}
+        onChange={setKind}
+        options={[
+          { value: 'pre', label: 'Avant travaux' },
+          { value: 'post', label: 'Après travaux' },
+        ]}
+      />
       <Card>
         <Small>Variables disponibles : {VARS}</Small>
-        <Small>Une information absente apparaît comme [À COMPLÉTER] dans le message, jamais inventée.</Small>
+        <Small>Info absente : [À COMPLÉTER]</Small>
       </Card>
       {kind === 'pre' ? (
         <Field label="Message de l’appel préalable" value={pre} onChangeText={setPre} multiline style={{ minHeight: 320 }} />

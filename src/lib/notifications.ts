@@ -2,9 +2,9 @@ import { useEffect, useState } from 'react';
 import { Platform } from 'react-native';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import Constants from 'expo-constants';
 import { router } from 'expo-router';
 import { api } from './api';
+import { localDeviceId, syncLocalReminders } from './localReminders';
 
 const IS_WEB = Platform.OS === 'web';
 
@@ -22,8 +22,8 @@ if (!IS_WEB) {
 export type PermissionState = 'granted' | 'denied' | 'undetermined' | 'unsupported';
 
 /**
- * Demande l'autorisation, récupère le jeton Expo Push et l'enregistre côté serveur.
- * Les rappels sont programmés par le serveur : ils ne dépendent pas du téléphone.
+ * Demande l'autorisation et enregistre le téléphone côté serveur.
+ * Les échéances sont calculées par le serveur et programmées sur le téléphone (rappels locaux, sans Firebase).
  */
 export async function registerForPush(ask = true): Promise<PermissionState> {
   if (Platform.OS === 'web' || !Device.isDevice) return 'unsupported';
@@ -40,14 +40,14 @@ export async function registerForPush(ask = true): Promise<PermissionState> {
   if (status !== 'granted') {
     return status === 'denied' ? 'denied' : 'undetermined';
   }
-  const projectId =
-    (Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined)?.eas?.projectId ?? Constants.easConfig?.projectId;
   try {
-    const token = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
-    await api('/api/notifications/devices', { method: 'POST', body: { token: token.data, platform: Platform.OS, permission: status } });
+    // Rappels locaux (sans Firebase) : le téléphone s’enregistre comme appareil « local »,
+    // puis programme lui-même les notifications (voir localReminders.ts)
+    await api('/api/notifications/devices', { method: 'POST', body: { token: await localDeviceId(), platform: Platform.OS, permission: status } });
   } catch {
-    /* projectId EAS manquant ou hors connexion : réessayé au prochain démarrage */
+    /* hors connexion : réessayé au prochain démarrage */
   }
+  syncLocalReminders();
   return 'granted';
 }
 

@@ -20,6 +20,7 @@ interface Job {
 const DELIVERY: Record<string, { label: string; tone: 'neutral' | 'success' | 'info' | 'warning' | 'danger' }> = {
   unknown: { label: 'Programmée', tone: 'neutral' },
   accepted_by_expo: { label: 'Envoyée (non confirmée)', tone: 'info' },
+  local_device: { label: 'Rappel du téléphone', tone: 'success' },
   delivered_to_provider: { label: 'Transmise au téléphone', tone: 'success' },
   error: { label: 'Échec', tone: 'danger' },
   no_device: { label: 'Aucun appareil', tone: 'warning' },
@@ -32,7 +33,14 @@ export default function Notifications() {
   if (q.isError && !q.data) return <ErrorState message={errorMessage(q.error)} onRetry={() => q.refetch()} />;
   return (
     <Screen refreshing={q.isRefetching} onRefresh={() => q.refetch()}>
-      <Segmented value={scope} onChange={setScope} options={[{ value: 'feed', label: 'Reçues' }, { value: 'upcoming', label: 'Programmées' }]} />
+      <Segmented
+        value={scope}
+        onChange={setScope}
+        options={[
+          { value: 'feed', label: 'Reçues' },
+          { value: 'upcoming', label: 'Programmées' },
+        ]}
+      />
       {!q.data!.length ? <Empty icon="notifications-outline" title="Aucune notification" /> : null}
       {q.data!.map((j) => {
         const d = DELIVERY[j.deliveryStatus] ?? DELIVERY.unknown;

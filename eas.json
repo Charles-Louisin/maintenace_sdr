@@ -9,20 +9,18 @@
       "distribution": "internal",
       "environment": "development",
       "channel": "development",
-      "android": { "buildType": "apk" }
+      "android": {
+        "buildType": "apk"
+      }
     },
     "production": {
+      "distribution": "internal",
       "environment": "production",
       "channel": "production",
-      "autoIncrement": true
-    },
-    "production-apk": {
-      "extends": "production",
-      "distribution": "internal",
-      "android": { "buildType": "apk" }
+      "autoIncrement": true,
+      "android": {
+        "buildType": "apk"
+      }
     }
-  },
-  "submit": {
-    "production": {}
   }
 }

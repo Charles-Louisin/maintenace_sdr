@@ -78,7 +78,15 @@ export default function ReportSuccess() {
 
 const styles = StyleSheet.create({
   wrap: { flex: 1, backgroundColor: colors.bg, alignItems: 'center', justifyContent: 'space-evenly', padding: space.xl },
-  badge: { width: 104, height: 104, borderRadius: 52, backgroundColor: colors.success, alignItems: 'center', justifyContent: 'center', boxShadow: '0 16px 40px rgba(45, 115, 80, 0.32)' },
+  badge: {
+    width: 104,
+    height: 104,
+    borderRadius: 52,
+    backgroundColor: colors.success,
+    alignItems: 'center',
+    justifyContent: 'center',
+    boxShadow: '0 16px 40px rgba(45, 115, 80, 0.32)',
+  },
   title: { fontSize: 24, fontWeight: '700', letterSpacing: -0.4, color: colors.text, textAlign: 'center' },
   file: { fontSize: 15, fontWeight: '600', color: colors.primary, textAlign: 'center' },
   meta: { fontSize: 13, color: colors.textMuted, textAlign: 'center' },
