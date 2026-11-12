@@ -1,0 +1,72 @@
+{
+  "expo": {
+    "name": "BATIS",
+    "slug": "batis",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.batis.maintenance",
+      "infoPlist": {
+        "CADisableMinimumFrameDurationOnPhone": true
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#FDECD8",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false,
+      "package": "com.batis.maintenance"
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      [
+        "expo-notifications",
+        {
+          "color": "#1F3B2D",
+          "icon": "./assets/android-icon-monochrome.png"
+        }
+      ],
+      "expo-sharing",
+      "expo-font",
+      [
+        "expo-local-authentication",
+        {
+          "faceIDPermission": "BATIS utilise Face ID pour déverrouiller votre session sans ressaisir le mot de passe."
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FDECD8",
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 220
+        }
+      ],
+      "expo-updates"
+    ],
+    "scheme": "batis",
+    "experiments": {
+      "typedRoutes": false
+    },
+    "extra": {
+      "apiUrl": "",
+      "eas": {
+        "projectId": ""
+      }
+    },
+    "backgroundColor": "#FDECD8",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    }
+  }
+}
